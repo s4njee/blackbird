@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -149,7 +148,7 @@ func (s *Server) detailHandler(w http.ResponseWriter, r *http.Request) {
 // ---- POST /api/torrents/action ----
 
 type actionRequest struct {
-	Action       string   `json:"action"` // start|pause|stop|recheck|remove|remove_with_data|set_label|move_data|priority|file_priority|tracker_add|tracker_enable|reannounce
+	Action       string   `json:"action"` // start|force_start|pause|stop|recheck|remove|remove_with_data|set_label|move_data|priority|superseed|sequential|save_session|set_custom|file_priority|tracker_add|tracker_enable|reannounce
 	Hashes       []string `json:"hashes"`
 	Label        string   `json:"label,omitempty"`
 	Priority     *int     `json:"priority,omitempty"`
@@ -157,7 +156,10 @@ type actionRequest struct {
 	FileIndex    *int     `json:"fileIndex,omitempty"`
 	TrackerIndex *int     `json:"trackerIndex,omitempty"`
 	TrackerURL   string   `json:"trackerUrl,omitempty"`
+	TrackerGroup *int     `json:"trackerGroup,omitempty"`
 	Enabled      *bool    `json:"enabled,omitempty"`
+	CustomField  string   `json:"customField,omitempty"`
+	CustomValue  string   `json:"customValue,omitempty"`
 }
 
 type hashResult struct {
@@ -168,6 +170,15 @@ type hashResult struct {
 
 type actionResponse struct {
 	Results []hashResult `json:"results"`
+}
+
+func validCustomField(field string) bool {
+	switch field {
+	case "custom2", "custom3", "custom4", "custom5":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +192,7 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Action {
-	case "start", "pause", "stop", "recheck", "remove", "remove_with_data", "set_label", "priority", "move_data", "file_priority", "tracker_add", "tracker_enable", "reannounce":
+	case "start", "force_start", "pause", "stop", "recheck", "remove", "remove_with_data", "set_label", "priority", "move_data", "superseed", "sequential", "save_session", "set_custom", "file_priority", "tracker_add", "tracker_remove", "tracker_enable", "reannounce":
 	default:
 		writeAPIError(w, http.StatusBadRequest, "bad_request", "unknown action "+req.Action)
 		return
@@ -202,8 +213,24 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "bad_request", "tracker_add requires trackerUrl")
 		return
 	}
+	if req.Action == "tracker_add" && req.TrackerGroup != nil && *req.TrackerGroup < 0 {
+		writeAPIError(w, http.StatusBadRequest, "bad_request", "trackerGroup must be non-negative")
+		return
+	}
+	if req.Action == "tracker_remove" && (req.TrackerIndex == nil || *req.TrackerIndex < 0) {
+		writeAPIError(w, http.StatusBadRequest, "bad_request", "tracker_remove requires trackerIndex")
+		return
+	}
 	if req.Action == "tracker_enable" && (req.TrackerIndex == nil || req.Enabled == nil || *req.TrackerIndex < 0) {
 		writeAPIError(w, http.StatusBadRequest, "bad_request", "tracker_enable requires trackerIndex and enabled")
+		return
+	}
+	if (req.Action == "superseed" || req.Action == "sequential") && req.Enabled == nil {
+		writeAPIError(w, http.StatusBadRequest, "bad_request", req.Action+" requires enabled")
+		return
+	}
+	if req.Action == "set_custom" && !validCustomField(req.CustomField) {
+		writeAPIError(w, http.StatusBadRequest, "bad_request", "set_custom requires customField custom2-custom5")
 		return
 	}
 
@@ -218,6 +245,8 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 		switch req.Action {
 		case "start":
 			err = rtc.Start(ctx, hash)
+		case "force_start":
+			err = rtc.ForceStart(ctx, hash)
 		case "pause":
 			err = rtc.Pause(ctx, hash)
 		case "stop":
@@ -233,12 +262,26 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 			err = rtc.SetLabel(ctx, hash, req.Label)
 		case "priority":
 			err = rtc.SetPriority(ctx, hash, *req.Priority)
+		case "superseed":
+			err = rtc.SetSuperseeding(ctx, hash, *req.Enabled)
+		case "sequential":
+			err = rtc.SetSequential(ctx, hash, *req.Enabled)
+		case "save_session":
+			err = rtc.SaveSession(ctx, hash)
+		case "set_custom":
+			err = rtc.SetCustom(ctx, hash, req.CustomField, req.CustomValue)
 		case "move_data":
 			err = s.moveData(ctx, hash, req.Destination)
 		case "file_priority":
 			err = rtc.SetFilePriority(ctx, hash, *req.FileIndex, *req.Priority)
 		case "tracker_add":
-			err = rtc.AddTracker(ctx, hash, req.TrackerURL)
+			group := 0
+			if req.TrackerGroup != nil {
+				group = *req.TrackerGroup
+			}
+			err = rtc.AddTracker(ctx, hash, req.TrackerURL, group)
+		case "tracker_remove":
+			err = rtc.RemoveTracker(ctx, hash, *req.TrackerIndex)
 		case "tracker_enable":
 			err = rtc.SetTrackerEnabled(ctx, hash, *req.TrackerIndex, *req.Enabled)
 		case "reannounce":
@@ -253,50 +296,10 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// moveData moves a stopped torrent's data under destination (keeping the
-// base name), applies d.directory.set, and restarts the torrent. Both source
-// and destination are checked against the configured download dirs.
+// moveData keeps the legacy batch action available while using the safer
+// PAR-2.2 move engine. New UI clients use the cancellable job endpoint.
 func (s *Server) moveData(ctx context.Context, hash, destination string) error {
-	rtc := s.opts.RTorrent
-
-	// Must be stopped (handoff rule).
-	for _, t := range s.opts.Poller.Snapshot().Torrents {
-		if t.Hash == hash {
-			if t.State != rtorrent.StateStopped {
-				return errors.New("torrent must be stopped before moving data (state: " + string(t.State) + ")")
-			}
-		}
-	}
-
-	basePath, err := rtc.BasePath(ctx, hash)
-	if err != nil {
-		return err
-	}
-	if err := rtorrent.CheckWithin(basePath, s.opts.Store.DownloadDirs()); err != nil {
-		return err
-	}
-	if err := rtorrent.CheckWithin(destination, s.opts.Store.DownloadDirs()); err != nil {
-		return err
-	}
-
-	dest := filepath.Join(destination, filepath.Base(basePath))
-	if dest == basePath {
-		return errors.New("destination resolves to the same path")
-	}
-	if _, err := os.Stat(dest); err == nil {
-		return errors.New("destination already exists: " + dest)
-	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return err
-	}
-	if err := os.Rename(basePath, dest); err != nil {
-		return err
-	}
-	if err := rtc.SetDirectory(ctx, hash, dest); err != nil {
-		return err
-	}
-	// Restart after the move per the handoff.
-	return rtc.Start(ctx, hash)
+	return s.moveTorrent(ctx, hash, destination, moveFiles)
 }
 
 // ---- POST /api/torrents/add ----

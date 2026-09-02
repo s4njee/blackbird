@@ -120,6 +120,9 @@ func TestComputeAggregates(t *testing.T) {
 		{State: rtorrent.StateStopped, Label: "", TrackerHost: ""},
 	}
 	agg := computeAggregates(ts)
+	if agg.Status["all"] != 4 {
+		t.Fatalf("all count = %d, want 4", agg.Status["all"])
+	}
 	if agg.Status[rtorrent.StateDownloading] != 2 || agg.Status[rtorrent.StateSeeding] != 1 || agg.Status[rtorrent.StateStopped] != 1 {
 		t.Fatalf("status counts = %+v", agg.Status)
 	}
@@ -128,6 +131,32 @@ func TestComputeAggregates(t *testing.T) {
 	}
 	if agg.Trackers["a.com"] != 2 || agg.Trackers["b.com"] != 1 || len(agg.Trackers) != 2 {
 		t.Fatalf("tracker counts = %+v", agg.Trackers)
+	}
+}
+
+func TestComputeAggregatesCategoryMembership(t *testing.T) {
+	ts := []rtorrent.Torrent{
+		// Downloading at a non-zero rate is Active but not Completed or Inactive.
+		{State: rtorrent.StateDownloading, DownRate: 1, IsOpen: true},
+		// A completed seeder with no traffic is both Completed and Inactive.
+		{State: rtorrent.StateSeeding, Complete: true, IsOpen: true},
+		// Queued downloads are open but idle, so they are Inactive.
+		{State: rtorrent.StateQueued, IsOpen: true},
+		// A stopped torrent is not open and therefore not Inactive.
+		{State: rtorrent.StateStopped},
+		// Upload-only seeding is still Active.
+		{State: rtorrent.StateSeeding, Complete: true, UpRate: 1, IsOpen: true},
+	}
+
+	agg := computeAggregates(ts)
+	if got := agg.Status["completed"]; got != 2 {
+		t.Fatalf("completed = %d, want 2", got)
+	}
+	if got := agg.Status["active"]; got != 2 {
+		t.Fatalf("active = %d, want 2", got)
+	}
+	if got := agg.Status["inactive"]; got != 2 {
+		t.Fatalf("inactive = %d, want 2", got)
 	}
 }
 
@@ -229,7 +258,7 @@ func TestPollerLifecycle(t *testing.T) {
 
 	// Both connection transitions were pushed as events.
 	mu.Lock()
-	sawUp, sawDown := false, false
+	sawUp, sawDown, sawAggregates := false, false, false
 	for _, d := range deltas {
 		if d.Status == StatusConnected {
 			sawUp = true
@@ -237,10 +266,13 @@ func TestPollerLifecycle(t *testing.T) {
 		if d.Status == StatusDisconnected {
 			sawDown = true
 		}
+		if d.Aggregates != nil && d.Aggregates.Status["all"] > 0 {
+			sawAggregates = true
+		}
 	}
 	mu.Unlock()
-	if !sawUp || !sawDown {
-		t.Fatalf("status transitions missing: sawUp=%v sawDown=%v", sawUp, sawDown)
+	if !sawUp || !sawDown || !sawAggregates {
+		t.Fatalf("delta state missing: sawUp=%v sawDown=%v sawAggregates=%v", sawUp, sawDown, sawAggregates)
 	}
 }
 

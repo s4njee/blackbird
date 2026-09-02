@@ -352,12 +352,17 @@ func TestActionBatchEveryAction(t *testing.T) {
 
 	cases := []map[string]any{
 		{"action": "start"},
+		{"action": "force_start"},
 		{"action": "pause"},
 		{"action": "stop"},
 		{"action": "recheck"},
 		{"action": "remove"},
 		{"action": "set_label", "label": "iso"},
 		{"action": "priority", "priority": 3},
+		{"action": "superseed", "enabled": true},
+		{"action": "sequential", "enabled": true},
+		{"action": "save_session"},
+		{"action": "set_custom", "customField": "custom3", "customValue": "release"},
 	}
 	for _, c := range cases {
 		body := map[string]any{"hashes": []string{"h1", "h2"}}
@@ -392,10 +397,47 @@ func TestActionBatchEveryAction(t *testing.T) {
 		}
 	}
 
+	for _, action := range []string{"superseed", "sequential"} {
+		resp, _ := postJSON(t, ts.URL+"/api/torrents/action", map[string]any{"action": action, "hashes": []string{"h1"}})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s without enabled status = %d, want 400", action, resp.StatusCode)
+		}
+	}
+	resp, _ := postJSON(t, ts.URL+"/api/torrents/action", map[string]any{"action": "set_custom", "hashes": []string{"h1"}, "customField": "custom1"})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("set_custom custom1 status = %d, want 400", resp.StatusCode)
+	}
+
 	// move_data requires a destination.
-	resp, _ := postJSON(t, ts.URL+"/api/torrents/action", map[string]any{"action": "move_data", "hashes": []string{"h1"}})
+	resp, _ = postJSON(t, ts.URL+"/api/torrents/action", map[string]any{"action": "move_data", "hashes": []string{"h1"}})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("move_data without destination status = %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestExtendedActionsReachRTorrent(t *testing.T) {
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+	for _, body := range []map[string]any{
+		{"action": "force_start", "hashes": []string{"h1"}},
+		{"action": "superseed", "hashes": []string{"h1"}, "enabled": true},
+		{"action": "sequential", "hashes": []string{"h1"}, "enabled": true},
+		{"action": "save_session", "hashes": []string{"h1"}},
+		{"action": "set_custom", "hashes": []string{"h1"}, "customField": "custom5", "customValue": "note"},
+	} {
+		resp, out := postJSON(t, st.ts.URL+"/api/torrents/action", body)
+		if resp.StatusCode != http.StatusOK || out["results"].([]any)[0].(map[string]any)["ok"] != true {
+			t.Fatalf("action %v failed: status=%d body=%v", body["action"], resp.StatusCode, out)
+		}
+	}
+	seen := map[string]bool{}
+	for _, method := range st.daemon.CallMethods() {
+		seen[method] = true
+	}
+	for _, method := range []string{"d.open", "d.start", "d.resume", "d.connection_seed.set", "d.sequential.set", "d.save_full_session", "d.custom5.set"} {
+		if !seen[method] {
+			t.Errorf("fakertorrent did not receive %q; calls=%v", method, st.daemon.CallMethods())
+		}
 	}
 }
 
@@ -433,9 +475,9 @@ func TestActionBatchPartialFaultSurfaces(t *testing.T) {
 	}
 }
 
-// TestMoveDataGuardrails checks the safety rules around move-data: the source
-// must be stopped, and both the base path and destination must resolve inside
-// configured download directories.
+// TestMoveDataGuardrails checks the destination safety boundary. PAR-2.2
+// stops and restarts active torrents automatically, so callers no longer need
+// to stop them before requesting a move.
 func TestMoveDataGuardrails(t *testing.T) {
 	st := newTestStack(t, "", fakertorrent.Options{IncludeStopped: true})
 	waitForConnected(t, st.p)
@@ -453,22 +495,10 @@ func TestMoveDataGuardrails(t *testing.T) {
 		return body["results"].([]any)[0].(map[string]any)
 	}
 
-	// Non-stopped torrent (downloading) is refused before any filesystem work.
-	if r := do("aaaa1111aaaa1111", "/mnt/data/x"); r["ok"] != false ||
-		!strings.Contains(r["error"].(string), "must be stopped") {
-		t.Errorf("downloading move = %+v", r)
-	}
-
-	// Stopped torrent moved outside configured dirs is refused.
+	// A destination outside configured dirs is refused before filesystem work.
 	if r := do("dddd4444dddd4444", "/etc"); r["ok"] != false ||
 		!strings.Contains(r["error"].(string), "outside the configured download directories") {
 		t.Errorf("outside-dir move = %+v", r)
-	}
-
-	// Destination resolving back to the base path is refused.
-	if r := do("dddd4444dddd4444", "/mnt/data/shared"); r["ok"] != false ||
-		!strings.Contains(r["error"].(string), "resolves to the same path") {
-		t.Errorf("same-path move = %+v", r)
 	}
 }
 

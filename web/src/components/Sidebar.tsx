@@ -1,28 +1,28 @@
 import { For, Show, createMemo } from "solid-js";
 import { formatBytes } from "../lib/format";
 import { aggregates, torrentCount, volumes } from "../store/session";
-import { filters, setFilter } from "../store/ui";
+import { applySavedFilter, filters, removeSavedFilter, savedFilterIsActive, savedFilters, setFilter } from "../store/ui";
 
 const STATUS_LABELS: Record<string, string> = {
-  downloading: "Downloading", seeding: "Seeding", stopped: "Stopped", queued: "Queued", checking: "Checking", error: "Errored",
+  downloading: "Downloading", seeding: "Seeding", completed: "Completed", active: "Active", inactive: "Inactive", stopped: "Stopped", queued: "Queued", checking: "Checking", error: "Error",
 };
+const STATUS_ITEMS = ["downloading", "seeding", "completed", "active", "inactive", "stopped", "queued", "checking", "error"];
 const LABEL_COLORS: Record<string, string> = {
   iso: "iso", archive: "archive", kernel: "kernel", apps: "apps", media: "media",
 };
 
-function FilterItem(props: { label: string; count: number; active: boolean; dot?: string; onClick: () => void }) {
+function FilterItem(props: { label: string; count?: number; active: boolean; dot?: string; onClick: () => void }) {
   return (
     <button class="sidebar-item" classList={{ active: props.active }} type="button" aria-label={props.label} data-short={props.label.slice(0, 1).toUpperCase()} onClick={props.onClick}>
       <Show when={props.dot}><span class={`label-dot ${props.dot}`} aria-hidden="true" /></Show>
       <span class="sidebar-item-label" title={props.label}>{props.label}</span>
-      <span class="sidebar-count tnum">{props.count}</span>
+      <Show when={props.count !== undefined}><span class="sidebar-count tnum">{props.count}</span></Show>
     </button>
   );
 }
 
 export function Sidebar() {
   const a = aggregates;
-  const statusItems = createMemo(() => Object.keys(a().status).sort());
   const labelItems = createMemo(() => Object.keys(a().labels).sort((x, y) => x.localeCompare(y)));
   const trackerItems = createMemo(() => Object.keys(a().trackers).sort((x, y) => a().trackers[y] - a().trackers[x] || x.localeCompare(y)));
   const volume = createMemo(() => volumes()[0]);
@@ -36,11 +36,19 @@ export function Sidebar() {
       <div class="sidebar-scroll">
         <section class="sidebar-group">
           <div class="sidebar-caption">Status</div>
-          <FilterItem label="All" count={torrentCount()} active={!filters().status} onClick={() => setFilter("status", "")} />
-          <For each={statusItems()}>{(status) => (
-            <FilterItem label={STATUS_LABELS[status] ?? status} count={a().status[status]} active={filters().status === status} onClick={() => setFilter("status", status)} />
+          <FilterItem label="All" count={a().status.all ?? torrentCount()} active={!filters().status} onClick={() => setFilter("status", "")} />
+          <For each={STATUS_ITEMS}>{(status) => (
+            <FilterItem label={STATUS_LABELS[status]} count={a().status[status] ?? 0} active={filters().status === status} onClick={() => setFilter("status", status)} />
           )}</For>
         </section>
+        <Show when={savedFilters().length}>
+          <section class="sidebar-group">
+            <div class="sidebar-caption">Saved</div>
+            <For each={savedFilters()}>{(saved) => (
+              <div class="saved-filter-row"><FilterItem label={saved.name} active={savedFilterIsActive(saved)} onClick={() => applySavedFilter(saved)} /><button type="button" aria-label={`Remove saved filter ${saved.name}`} title="Remove saved filter" onClick={() => removeSavedFilter(saved.id)}>×</button></div>
+            )}</For>
+          </section>
+        </Show>
         <section class="sidebar-group">
           <div class="sidebar-caption">Labels</div>
           <FilterItem label="All" count={torrentCount()} active={!filters().label} onClick={() => setFilter("label", "")} />

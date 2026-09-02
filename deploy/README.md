@@ -28,6 +28,55 @@ destructive command:
 docker compose down --volumes
 ```
 
+## Torrent categories
+
+The Status sidebar offers the standard rTorrent categories. **Completed** is
+any torrent for which rTorrent reports `d.complete`, regardless of whether it
+is downloading, seeding, or stopped. **Active** means its current download or
+upload rate is non-zero. **Inactive** means it is open with both rates at zero.
+All other filters use Blackbird's normalized rTorrent state: Downloading,
+Seeding, Stopped, Queued, Checking, and Error.
+
+## Search and saved filters
+
+The top-bar filter searches torrent name, hash prefix, download path, tracker
+host, and message. Terms are combined with AND. Prefix a value with
+`label:`, `tracker:`, `path:`, or `status:` to search one field; use numeric
+comparisons such as `ratio>1.5` and `size<4GB`. The `?` beside the filter
+shows this syntax in the console. Save the current filter there to pin it in
+the sidebar; those pins stay in the browser. Operators can seed defaults in
+YAML with `ui.saved_filters`; local saved filters take precedence.
+
+## Sorting
+
+Click any visible table heading to sort it. Shift-click a second heading to
+add it as the secondary key; the header shows both directions and the second
+key's ordinal. The browser keeps this preference locally. On a browser with
+no saved preference, `ui.sort` provides the initial key; `ui.sort.keys` may
+provide a primary and secondary operator default.
+
+## Torrent actions
+
+The action toolbar offers Start, Force start, pause/stop, force recheck, and
+all four rTorrent priorities: Off, Low, Normal, and High. Right-click one or
+more torrents for the same controls plus force reannounce. Its **Advanced**
+submenu toggles live sequential downloading and superseeding, saves the
+torrent session, and sets the `custom2` through `custom5` fields. Actions are
+batched and report an error for each affected torrent; live priority,
+sequential, superseeding, and custom-field changes update immediately and are
+restored if rTorrent rejects the action.
+
+## Moving torrent data
+
+Use **Move data** in the toolbar or torrent context menu to choose a configured
+root, per-label destination, recent destination, or folder in the constrained
+directory browser. **Move files** stops running torrents, moves their data,
+and restarts them; cross-filesystem moves copy, verify, then remove the source.
+**Set directory only** updates rTorrent after files were moved separately.
+The dialog shows a per-torrent progress/result list and can cancel pending or
+copying work. Paths outside configured download roots and symlink escapes are
+refused.
+
 ## Host storage
 
 The default download bind mount works on Docker Desktop for macOS and Docker

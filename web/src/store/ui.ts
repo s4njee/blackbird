@@ -11,6 +11,7 @@ import {
   configToLayout,
   layoutToConfig,
 } from "../lib/columns";
+import type { SortKey } from "../lib/sort";
 
 export type Route = "console" | "settings" | "stats";
 
@@ -18,6 +19,7 @@ const [route, setRoute] = createSignal<Route>("console");
 const [query, setQuery] = createSignal("");
 /** Set by the "+ Add torrent" top-bar button; the modal (Epic 7.1) consumes it. */
 const [addOpen, setAddOpen] = createSignal(false);
+const [moveHashes, setMoveHashes] = createSignal<string[]>([]);
 const [queuedTorrentFiles, setQueuedTorrentFiles] = createSignal<File[]>([]);
 const [queuedTorrentFileErrors, setQueuedTorrentFileErrors] = createSignal<string[]>([]);
 
@@ -25,8 +27,9 @@ export type SortColumn = ColumnKey;
 export type SortDirection = "asc" | "desc";
 
 type Filters = { status: string; label: string; tracker: string };
+export type SavedFilter = Filters & { id: string; name: string; query: string };
 const [filters, setFilters] = createSignal<Filters>({ status: "", label: "", tracker: "" });
-const [sort, setSort] = createSignal<{ column: SortColumn; direction: SortDirection }>(loadSort());
+const [sort, setSort] = createSignal<SortKey[]>(loadSort());
 const [selectedHashes, setSelectedHashes] = createSignal<string[]>([]);
 const [shownTorrentCount, setShownTorrentCount] = createSignal(0);
 const [visibleHashes, setVisibleHashes] = createSignal<string[]>([]);
@@ -36,7 +39,15 @@ const [toast, setToast] = createSignal("");
 const [settingsDirty, setSettingsDirty] = createSignal(false);
 
 const COLUMN_LAYOUT_STORAGE_KEY = "blackbird.table-columns.v1";
-const hasLocalStorage = () => typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+const SORT_STORAGE_KEY = "blackbird.table-sort.v2";
+const LEGACY_SORT_STORAGE_KEY = "blackbird.table-sort";
+const SAVED_FILTERS_STORAGE_KEY = "blackbird.saved-filters.v1";
+function hasLocalStorage() { return typeof window !== "undefined" && typeof window.localStorage !== "undefined"; }
+
+export const moveOpen = createMemo(() => moveHashes().length > 0);
+export function openMove(hashes: string[]) { setMoveHashes([...new Set(hashes)]); }
+export function closeMove() { setMoveHashes([]); }
+export { moveHashes };
 const cloneLayout = (layout: ColumnLayout): ColumnLayout => ({ order: [...layout.order], hidden: [...layout.hidden], widths: { ...layout.widths } });
 
 function validLayout(value: unknown): ColumnLayout | null {
@@ -71,6 +82,22 @@ function loadColumnLayout(): ColumnLayout {
 }
 
 const [columnLayout, setColumnLayout] = createSignal<ColumnLayout>(loadColumnLayout());
+function validSavedFilters(value: unknown): SavedFilter[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object") return [];
+    const raw = item as Record<string, unknown>;
+    const name = typeof raw.name === "string" ? raw.name.trim() : "";
+    if (!name) return [];
+    return [{ id: typeof raw.id === "string" && raw.id ? raw.id : `saved-${index}-${name}`, name, query: typeof raw.query === "string" ? raw.query : "", status: typeof raw.status === "string" ? raw.status : "", label: typeof raw.label === "string" ? raw.label : "", tracker: typeof raw.tracker === "string" ? raw.tracker : "" }];
+  });
+}
+function loadSavedFilters() {
+  if (!hasLocalStorage()) return [];
+  try { return validSavedFilters(JSON.parse(window.localStorage.getItem(SAVED_FILTERS_STORAGE_KEY) ?? "[]")); } catch { return []; }
+}
+const [savedFilters, setSavedFilters] = createSignal<SavedFilter[]>(loadSavedFilters());
+function persistSavedFilters(next: SavedFilter[]) { if (hasLocalStorage()) window.localStorage.setItem(SAVED_FILTERS_STORAGE_KEY, JSON.stringify(next)); }
 export const visibleColumnKeys = createMemo(() => columnLayout().order.filter((key) => key === "name" || !columnLayout().hidden.includes(key)));
 export const columnDefinitions = COLUMN_DEFINITIONS;
 
@@ -121,14 +148,37 @@ export function columnLayoutConfig() {
   return layoutToConfig(columnLayout());
 }
 
-function loadSort(): { column: SortColumn; direction: SortDirection } {
-  try {
-    const value = localStorage.getItem("blackbird.table-sort");
-    if (value) return JSON.parse(value) as { column: SortColumn; direction: SortDirection };
-  } catch {
-    // A malformed preference should never stop the console from starting.
+function normalizeSortColumn(value: unknown): SortColumn | null {
+  const legacy = value === "added" ? "addedAt" : value === "finished" ? "finishedAt" : value === "created" ? "creationDate" : value;
+  return typeof legacy === "string" && DEFAULT_COLUMN_KEYS.includes(legacy as SortColumn) ? legacy as SortColumn : null;
+}
+function validSort(value: unknown): SortKey[] | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as { keys?: unknown; column?: unknown; dir?: unknown; direction?: unknown };
+  const candidates = Array.isArray(raw.keys) && raw.keys.length ? raw.keys : [{ column: raw.column, direction: raw.direction ?? raw.dir }];
+  const keys: SortKey[] = [];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const item = candidate as { column?: unknown; direction?: unknown; dir?: unknown };
+    const column = normalizeSortColumn(item.column);
+    const direction = item.direction ?? item.dir;
+    if (!column || (direction !== "asc" && direction !== "desc") || keys.some((key) => key.column === column)) continue;
+    keys.push({ column, direction });
+    if (keys.length === 2) break;
   }
-  return { column: "addedAt", direction: "desc" };
+  return keys.length ? keys : null;
+}
+function persistSort(keys: SortKey[]) { if (hasLocalStorage()) window.localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ keys })); }
+function loadSort(): SortKey[] {
+  if (hasLocalStorage()) {
+    try {
+      const current = validSort(JSON.parse(window.localStorage.getItem(SORT_STORAGE_KEY) ?? "null"));
+      if (current) return current;
+      const legacy = validSort(JSON.parse(window.localStorage.getItem(LEGACY_SORT_STORAGE_KEY) ?? "null"));
+      if (legacy) { persistSort(legacy); return legacy; }
+    } catch { /* malformed preferences fall through to the operator default */ }
+  }
+  return [{ column: "addedAt", direction: "desc" }];
 }
 
 export const selectedSet = createMemo(() => new Set(selectedHashes()));
@@ -142,12 +192,58 @@ export function clearFilters() {
   setQuery("");
 }
 
-export function changeSort(column: SortColumn) {
+export function hydrateSavedFiltersFromConfig(value: unknown) {
+  if (hasLocalStorage() && window.localStorage.getItem(SAVED_FILTERS_STORAGE_KEY)) return;
+  const next = validSavedFilters(value);
+  if (next.length) setSavedFilters(next);
+}
+
+export function saveCurrentFilter(name?: string) {
+  const current = filters();
+  const fallback = query().trim() || current.status || current.label || current.tracker || "Saved filter";
+  const base = (name || fallback).trim() || "Saved filter";
+  setSavedFilters((items) => {
+    const used = new Set(items.map((item) => item.name));
+    let unique = base; let suffix = 2;
+    while (used.has(unique)) unique = `${base} ${suffix++}`;
+    const next = [...items, { id: `saved-${Date.now()}-${Math.random().toString(36).slice(2)}`, name: unique, query: query(), ...current }];
+    persistSavedFilters(next); return next;
+  });
+}
+
+export function applySavedFilter(saved: SavedFilter) {
+  setFilters({ status: saved.status, label: saved.label, tracker: saved.tracker });
+  setQuery(saved.query);
+}
+
+export function removeSavedFilter(id: string) {
+  setSavedFilters((items) => { const next = items.filter((item) => item.id !== id); persistSavedFilters(next); return next; });
+}
+
+export function savedFilterIsActive(saved: SavedFilter) {
+  const current = filters();
+  return query() === saved.query && current.status === saved.status && current.label === saved.label && current.tracker === saved.tracker;
+}
+
+export function hydrateSortFromConfig(value: unknown) {
+  if (hasLocalStorage() && (window.localStorage.getItem(SORT_STORAGE_KEY) || window.localStorage.getItem(LEGACY_SORT_STORAGE_KEY))) return;
+  const keys = validSort(value);
+  if (keys) setSort(keys);
+}
+
+export function changeSort(column: SortColumn, addSecondary = false) {
   setSort((current) => {
-    const next = current.column === column
-      ? { column, direction: current.direction === "asc" ? "desc" as const : "asc" as const }
-      : { column, direction: "asc" as const };
-    localStorage.setItem("blackbird.table-sort", JSON.stringify(next));
+    const index = current.findIndex((key) => key.column === column);
+    let next: SortKey[];
+    if (!addSecondary) {
+      const direction: SortDirection = index === 0 && current[0].direction === "asc" ? "desc" : "asc";
+      next = [{ column, direction }];
+    } else if (index >= 0) {
+      next = current.map((key, keyIndex) => keyIndex === index ? { ...key, direction: key.direction === "asc" ? "desc" : "asc" } : key);
+    } else {
+      next = [...current.slice(0, 1), { column, direction: "asc" }];
+    }
+    persistSort(next);
     return next;
   });
 }
@@ -225,7 +321,7 @@ export function closeAdd() {
 }
 
 export {
-  addOpen, columnLayout, filters, focusedHash, query, queuedTorrentFileErrors, queuedTorrentFiles, route, selectedHashes, selectionAnchor, settingsDirty, shownTorrentCount, sort, toast, visibleHashes,
+  addOpen, columnLayout, filters, focusedHash, query, queuedTorrentFileErrors, queuedTorrentFiles, route, savedFilters, selectedHashes, selectionAnchor, settingsDirty, shownTorrentCount, sort, toast, visibleHashes,
   setAddOpen, setFocusedHash, setQuery, setRoute, setSettingsDirty, setShownTorrentCount, setQueuedTorrentFileErrors, setQueuedTorrentFiles,
   setVisibleHashes,
 };

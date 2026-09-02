@@ -75,7 +75,10 @@ type Delta struct {
 	Global *rtorrent.GlobalStats `json:"global,omitempty"`
 	// Status is set only on connected/disconnected transitions.
 	Status ConnStatus `json:"status,omitempty"`
-	At     time.Time  `json:"at"`
+	// Aggregates is included with every successful delta so the sidebar and
+	// table use the same server-defined category membership.
+	Aggregates *Aggregates `json:"aggregates,omitempty"`
+	At         time.Time   `json:"at"`
 }
 
 // Options configures the poller.
@@ -222,6 +225,7 @@ func (p *Poller) pollOnce(ctx context.Context) error {
 	}
 
 	agg := computeAggregates(torrents)
+	delta.Aggregates = &agg
 	p.snapshot = Snapshot{
 		GeneratedAt:    now,
 		Torrents:       torrents,
@@ -411,12 +415,26 @@ func torrentChanged(a, b rtorrent.Torrent) bool {
 
 func computeAggregates(ts []rtorrent.Torrent) Aggregates {
 	agg := Aggregates{
-		Status:   map[rtorrent.State]int{},
+		Status: map[rtorrent.State]int{
+			"all": 0, "completed": 0, "active": 0, "inactive": 0,
+			rtorrent.StateDownloading: 0, rtorrent.StateSeeding: 0, rtorrent.StateStopped: 0,
+			rtorrent.StateQueued: 0, rtorrent.StateChecking: 0, rtorrent.StateError: 0,
+		},
 		Labels:   map[string]int{},
 		Trackers: map[string]int{},
 	}
 	for _, t := range ts {
+		agg.Status["all"]++
 		agg.Status[t.State]++
+		if t.Complete {
+			agg.Status["completed"]++
+		}
+		if t.DownRate > 0 || t.UpRate > 0 {
+			agg.Status["active"]++
+		}
+		if t.DownRate == 0 && t.UpRate == 0 && t.IsOpen {
+			agg.Status["inactive"]++
+		}
 		if t.Label == "" {
 			agg.Labels[""]++ // unlabeled bucket
 		} else {

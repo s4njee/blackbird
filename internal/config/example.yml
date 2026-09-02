@@ -61,9 +61,14 @@ ui:
   # Operator default table layout. Browser-local layouts take precedence.
   # Omit this list to show all shipped columns at their handoff widths.
   columns: []
+  # Operator-default saved filters. Browser-local saved filters take precedence.
+  saved_filters: []
   sort:
     column: added
     dir: desc
+    # Optional primary/secondary browser seed. column/dir above remains
+    # compatible with existing configurations.
+    keys: []
 
 # rTorrent runtime tuning. Each key maps to the documented rtorrent command
 # (shown inline). Fields ABSENT here are left untouched on the daemon.

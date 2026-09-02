@@ -117,12 +117,24 @@ func TestWebSocketSnapshotAndDelta(t *testing.T) {
 		t.Fatalf("snapshot = %s", data)
 	}
 
-	// Deltas arrive each poll cycle.
+	// Deltas arrive each poll cycle and carry the server's category counts.
 	deadline := time.Now().Add(3 * time.Second)
 	sawDelta := false
 	for time.Now().Before(deadline) && !sawDelta {
 		env := readMsg(t, ws)
 		if env.Type == "delta" {
+			data, _ := json.Marshal(env.Data)
+			var delta struct {
+				Aggregates struct {
+					Status map[string]int `json:"status"`
+				} `json:"aggregates"`
+			}
+			if err := json.Unmarshal(data, &delta); err != nil {
+				t.Fatal(err)
+			}
+			if delta.Aggregates.Status["all"] != 3 {
+				t.Fatalf("delta aggregates = %s", data)
+			}
 			sawDelta = true
 		}
 	}

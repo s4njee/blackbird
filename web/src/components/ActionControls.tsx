@@ -1,10 +1,11 @@
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { connected, patchTorrents, restoreTorrents, torrentList, volumes } from "../store/session";
-import { moveSelection, selectAllVisible, selectedHashes, showToast, shownTorrentCount, visibleHashes } from "../store/ui";
+import { connected, patchTorrents, restoreTorrents, torrentList } from "../store/session";
+import { moveSelection, openMove, selectAllVisible, selectedHashes, showToast, shownTorrentCount, visibleHashes } from "../store/ui";
+import type { Torrent } from "../lib/types";
 import type { ContextTarget } from "./TorrentTable";
 
-type Action = "start" | "pause" | "stop" | "recheck" | "reannounce" | "remove" | "remove_with_data" | "set_label" | "move_data" | "priority";
-type ActionOptions = { label?: string; destination?: string; priority?: number };
+type Action = "start" | "force_start" | "pause" | "stop" | "recheck" | "reannounce" | "remove" | "remove_with_data" | "set_label" | "move_data" | "priority" | "superseed" | "sequential" | "save_session" | "set_custom";
+type ActionOptions = { label?: string; destination?: string; priority?: number; enabled?: boolean; customField?: "custom2" | "custom3" | "custom4" | "custom5"; customValue?: string };
 
 async function sendAction(action: Action, hashes: string[], options: ActionOptions = {}) {
   const response = await fetch("/api/torrents/action", {
@@ -18,7 +19,21 @@ async function sendAction(action: Action, hashes: string[], options: ActionOptio
 }
 
 function actionLabel(action: Action) {
-  return ({ start: "Start", pause: "Pause", stop: "Stop", recheck: "Force recheck", reannounce: "Force reannounce", remove: "Remove", remove_with_data: "Remove + data", set_label: "Set label", move_data: "Move data", priority: "Set priority" } as Record<Action, string>)[action];
+  return ({ start: "Start", force_start: "Force start", pause: "Pause", stop: "Stop", recheck: "Force recheck", reannounce: "Force reannounce", remove: "Remove", remove_with_data: "Remove + data", set_label: "Set label", move_data: "Move data", priority: "Set priority", superseed: "Superseeding", sequential: "Sequential download", save_session: "Save session", set_custom: "Set custom field" } as Record<Action, string>)[action];
+}
+
+function optimisticPatch(action: Action, options: ActionOptions): Partial<Torrent> | null {
+  if (action === "start" || action === "force_start") return { state: "downloading", downRate: 0, upRate: 0 };
+  if (action === "pause" || action === "stop") return { state: "stopped", downRate: 0, upRate: 0 };
+  if (action === "priority" && options.priority !== undefined) return { priority: options.priority };
+  if (action === "superseed" && options.enabled !== undefined) return { superseeding: options.enabled };
+  if (action === "sequential" && options.enabled !== undefined) return { sequential: options.enabled };
+  if (action === "set_custom" && options.customField) {
+    const patch = { [options.customField]: options.customValue ?? "" } as Partial<Torrent>;
+    if (options.customField === "custom2") patch.ratioGroup = options.customValue ?? "";
+    return patch;
+  }
+  return null;
 }
 
 function isEditableTarget(target: EventTarget | null) {
@@ -32,13 +47,13 @@ export function ActionToolbar(props: { onOpenMenu: (target: ContextTarget) => vo
     const hashes = selection();
     if (!hashes.length || !connected()) return;
     const previous = torrentList().filter((torrent) => hashes.includes(torrent.hash));
-    const state = action === "start" ? "downloading" : action === "pause" || action === "stop" ? "stopped" : "";
-    if (state) patchTorrents(hashes, { state, downRate: 0, upRate: 0 });
+    const patch = optimisticPatch(action, options ?? {});
+    if (patch) patchTorrents(hashes, patch);
     try {
       await sendAction(action, hashes, options);
       showToast(`${actionLabel(action)} queued for ${hashes.length} torrent${hashes.length === 1 ? "" : "s"}`);
     } catch (error) {
-      if (state) restoreTorrents(previous);
+      if (patch) restoreTorrents(previous);
       showToast(error instanceof Error ? error.message : "Action failed");
     }
   };
@@ -46,12 +61,7 @@ export function ActionToolbar(props: { onOpenMenu: (target: ContextTarget) => vo
     const label = window.prompt("Label for selected torrents:");
     if (label !== null) void perform("set_label", { label: label.trim() });
   };
-  const move = () => {
-    const active = torrentList().filter((torrent) => selection().includes(torrent.hash));
-    if (active.some((torrent) => torrent.state !== "stopped")) { showToast("Stop selected torrents before moving data."); return; }
-    const destination = window.prompt("Destination directory:", volumes()[0]?.path || "");
-    if (destination) void perform("move_data", { destination });
-  };
+  const move = () => openMove(selection());
   const remove = (withData = false) => {
     const count = selection().length;
     const words = withData ? `Remove ${count} torrent${count === 1 ? "" : "s"} and their data? This cannot be undone.` : `Remove ${count} torrent${count === 1 ? "" : "s"}?`;
@@ -108,13 +118,13 @@ function ToolbarView(props: {
   const openMenu = (event: MouseEvent) => props.onOpenMenu({ x: event.clientX, y: event.clientY, hashes: selectedHashes() });
   return <div class="toolbar">
     <button class="toolbar-button transport" disabled={!props.enabled} onClick={() => props.onAction("start")}><i>▶</i>Start</button>
+    <button class="toolbar-button transport" disabled={!props.enabled} onClick={() => props.onAction("force_start")}>Force start</button>
     <button class="toolbar-button transport" disabled={!props.enabled} onClick={() => props.onAction("pause")}><i>❙❙</i>Pause</button>
     <button class="toolbar-button transport" disabled={!props.enabled} onClick={() => props.onAction("stop")}><i>■</i>Stop</button><span class="toolbar-divider" />
     <button class="toolbar-button" disabled={!props.enabled} onClick={() => props.onAction("recheck")}>Force recheck</button>
     <button class="toolbar-button" disabled={!props.enabled} onClick={props.onSetLabel}>Set label</button>
     <button class="toolbar-button" disabled={!props.enabled} onClick={props.onMove}>Move data</button>
-    <button class="toolbar-button" disabled={!props.enabled} onClick={() => props.onAction("priority", { priority: 3 })}>Priority ↑</button>
-    <button class="toolbar-button" disabled={!props.enabled} onClick={() => props.onAction("priority", { priority: 0 })}>Priority ↓</button>
+    <label class="toolbar-priority">Priority <select disabled={!props.enabled} value="" onChange={(event) => { const value = event.currentTarget.value; if (value !== "") props.onAction("priority", { priority: Number(value) }); event.currentTarget.value = ""; }}><option value="">Set…</option><option value="0">Off</option><option value="1">Low</option><option value="2">Normal</option><option value="3">High</option></select></label>
     <button class="toolbar-button destructive" disabled={!props.enabled} onClick={() => props.onRemove(false)}>Remove</button>
     <span class="toolbar-spacer" /><button class="toolbar-more" disabled={!props.enabled} onClick={openMenu} title="More actions">•••</button>
     <span class="selection-readout tnum">{selectedHashes().length} selected · {shownTorrentCount()} of {torrentList().length} shown</span>
@@ -123,29 +133,25 @@ function ToolbarView(props: {
 
 export function ContextMenu(props: { target: ContextTarget | null; onClose: () => void }) {
   const [labelsOpen, setLabelsOpen] = createSignal(false);
+  const [priorityOpen, setPriorityOpen] = createSignal(false);
+  const [advancedOpen, setAdvancedOpen] = createSignal(false);
   const labels = createMemo(() => [...new Set(torrentList().map((torrent) => torrent.label).filter(Boolean))].sort());
   const target = () => props.target;
   const act = async (action: Action, options?: ActionOptions) => {
     const context = target();
     if (!context || !connected()) return;
     const previous = torrentList().filter((torrent) => context.hashes.includes(torrent.hash));
-    const state = action === "start" ? "downloading" : action === "pause" || action === "stop" ? "stopped" : "";
-    if (state) patchTorrents(context.hashes, { state, downRate: 0, upRate: 0 });
+    const patch = optimisticPatch(action, options ?? {});
+    if (patch) patchTorrents(context.hashes, patch);
     props.onClose();
     try { await sendAction(action, context.hashes, options); showToast(`${actionLabel(action)} queued for ${context.hashes.length} torrent${context.hashes.length === 1 ? "" : "s"}`); }
-    catch (error) { if (state) restoreTorrents(previous); showToast(error instanceof Error ? error.message : "Action failed"); }
+    catch (error) { if (patch) restoreTorrents(previous); showToast(error instanceof Error ? error.message : "Action failed"); }
   };
   const setLabel = (value?: string) => {
     if (!value) value = window.prompt("New label:") || undefined;
     if (value) void act("set_label", { label: value });
   };
-  const move = () => {
-    const context = target(); if (!context) return;
-    const selected = torrentList().filter((torrent) => context.hashes.includes(torrent.hash));
-    if (selected.some((torrent) => torrent.state !== "stopped")) { showToast("Stop selected torrents before moving data."); props.onClose(); return; }
-    const destination = window.prompt("Destination directory:", volumes()[0]?.path || "");
-    if (destination) void act("move_data", { destination });
-  };
+  const move = () => { const context = target(); if (!context) return; openMove(context.hashes); props.onClose(); };
   const remove = (withData: boolean) => {
     const context = target(); if (!context) return;
     if (window.confirm(withData ? `Remove ${context.hashes.length} torrent(s) and their data? This cannot be undone.` : `Remove ${context.hashes.length} torrent(s)?`)) void act(withData ? "remove_with_data" : "remove");
@@ -157,6 +163,16 @@ export function ContextMenu(props: { target: ContextTarget | null; onClose: () =
     try { await navigator.clipboard.writeText(magnet); showToast("Magnet link copied."); } catch { showToast("Unable to copy magnet link."); }
     props.onClose();
   };
+  const toggle = (field: "sequential" | "superseeding", action: "sequential" | "superseed") => {
+    const context = target();
+    if (!context) return;
+    const selected = torrentList().filter((torrent) => context.hashes.includes(torrent.hash));
+    void act(action, { enabled: !selected.every((torrent) => torrent[field]) });
+  };
+  const setCustom = (customField: "custom2" | "custom3" | "custom4" | "custom5") => {
+    const customValue = window.prompt(`Value for ${customField}:`);
+    if (customValue !== null) void act("set_custom", { customField, customValue });
+  };
   onMount(() => {
     const close = (event: Event) => { if (!(event.target as HTMLElement).closest(".context-menu")) props.onClose(); };
     const key = (event: KeyboardEvent) => { if (event.key === "Escape") props.onClose(); };
@@ -167,8 +183,12 @@ export function ContextMenu(props: { target: ContextTarget | null; onClose: () =
     const left = Math.min(context().x, window.innerWidth - 212); const top = Math.min(context().y, window.innerHeight - 300);
     return <div class="context-menu" style={{ left: `${Math.max(6, left)}px`, top: `${Math.max(6, top)}px` }}>
       <MenuItem label="Start" onClick={() => void act("start")} /><MenuItem label="Pause" onClick={() => void act("pause")} /><MenuItem label="Stop" onClick={() => void act("stop")} /><MenuDivider />
-      <MenuItem label="Force recheck" onClick={() => void act("recheck")} />
+      <MenuItem label="Force start" onClick={() => void act("force_start")} /><MenuItem label="Force recheck" onClick={() => void act("recheck")} />
       <MenuItem label="Force reannounce" onClick={() => void act("reannounce")} />
+      <div class="menu-submenu-wrap"><MenuItem label="Priority" hint="▸" onClick={() => setPriorityOpen(!priorityOpen())} />
+        <Show when={priorityOpen()}><div class="menu-submenu"><MenuItem label="Off" onClick={() => void act("priority", { priority: 0 })} /><MenuItem label="Low" onClick={() => void act("priority", { priority: 1 })} /><MenuItem label="Normal" onClick={() => void act("priority", { priority: 2 })} /><MenuItem label="High" onClick={() => void act("priority", { priority: 3 })} /></div></Show></div>
+      <div class="menu-submenu-wrap"><MenuItem label="Advanced" hint="▸" onClick={() => setAdvancedOpen(!advancedOpen())} />
+        <Show when={advancedOpen()}><div class="menu-submenu menu-advanced"><MenuItem label="Toggle sequential" onClick={() => toggle("sequential", "sequential")} /><MenuItem label="Toggle superseeding" onClick={() => toggle("superseeding", "superseed")} /><MenuItem label="Save session" onClick={() => void act("save_session")} /><MenuDivider /><MenuItem label="Set custom2…" onClick={() => setCustom("custom2")} /><MenuItem label="Set custom3…" onClick={() => setCustom("custom3")} /><MenuItem label="Set custom4…" onClick={() => setCustom("custom4")} /><MenuItem label="Set custom5…" onClick={() => setCustom("custom5")} /></div></Show></div>
       <div class="menu-label-wrap"><MenuItem label="Set label" hint="▸" onClick={() => setLabelsOpen(!labelsOpen())} />
         <Show when={labelsOpen()}><div class="label-submenu"><For each={labels()}>{(label) => <MenuItem label={label} onClick={() => setLabel(label)} />}</For><MenuItem label="New label…" onClick={() => setLabel()} /></div></Show></div>
       <MenuItem label="Move data…" onClick={move} /><MenuItem label="Copy magnet link" onClick={copyMagnet} /><MenuDivider />

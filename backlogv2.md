@@ -147,6 +147,17 @@ Acceptance criteria:
 - Filter definitions are documented in the user guide.
 - Poller tests cover each category's membership rules against fixture torrents.
 
+Results:
+
+- Added server-defined All, Completed, Active, and Inactive category counts alongside the normalized rTorrent states; counts now travel in every successful WebSocket delta.
+- Added `d.complete` and `d.is_open` to the normalized torrent payload so table filters use the exact same category rules as the server.
+- Updated the sidebar to show all ruTorrent category views in a stable order and consume server-authoritative counts.
+- Documented category definitions in the Compose user guide and covered the membership rules with poller tests.
+
+Remaining:
+
+- Add browser-level coverage for category selection and live count updates when the frontend test harness from POL-3.1 lands.
+
 ### PAR-1.4 — Search and advanced filtering (P1)
 
 **As a** user with thousands of torrents, **I want** to search by more than name **so that** I can find a torrent by hash, path, tracker, or message.
@@ -159,6 +170,17 @@ Acceptance criteria:
 - Selection and focus survive filter changes when the focused torrent is still visible.
 - Tests cover the query grammar and index invalidation.
 
+Results:
+
+- Added incremental lowercase search indexing for name, hash prefix, path, tracker host, message, and label; snapshot, add/change delta, and removal paths update the index without lowercasing fields at query time.
+- Added AND-combined field filters (`label:`, `tracker:`, `path:`, `status:`) and numeric comparisons (`ratio`, `size`) with a syntax popover beside the search input.
+- Added browser-persisted saved filters with sidebar pins and optional YAML defaults through `ui.saved_filters`.
+- Added parser/index invalidation coverage with the frontend test command and configuration loading coverage for operator defaults.
+
+Remaining:
+
+- Add browser automation coverage for the popover, saved-filter interactions, and selection retention when the POL-3.1 frontend harness is available.
+
 ### PAR-1.5 — Sort parity (P1)
 
 **As a** user, **I want** sorting on every column with stable secondary ordering **so that** the table is predictable while it ticks.
@@ -169,6 +191,18 @@ Acceptance criteria:
 - Shift-click adds a secondary sort key; the header shows both carets with an ordinal.
 - Sort preference has exactly one source of truth: per-browser localStorage seeded from YAML `ui.sort`; the current split between the two stores is removed.
 - Sorting is incremental (PERF-7.2); a sort-key change on a 5,000-row fixture completes within one frame.
+
+Results:
+
+- Replaced the single sort field with browser-persisted primary/secondary sort keys, seeded from backward-compatible `ui.sort` YAML values.
+- Made every catalogue column sortable with explicit numeric, date, enum, and locale-aware text comparisons; hash is the stable final tie-breaker.
+- Added Shift-click secondary sorting, ordinal header carets, `aria-sort` on the primary heading, and a header hint.
+- Added an incremental sorter that binary-inserts changed rows and falls back to a full sort only after a substantial list change; unit coverage exercises changed-row reordering and multi-key sorting.
+- Documented browser and YAML sort behavior in the Compose user guide.
+
+Remaining:
+
+- Record the PERF-7.2 5,000-row frame-time benchmark and add browser automation for Shift-click headers when the POL-3.1 harness is available.
 
 ---
 
@@ -185,6 +219,19 @@ Acceptance criteria:
 - Each action is recorded by `fakertorrent` and verified against real rTorrent in the QA-5.2 integration target from `backlog.md`.
 - Optimistic UI covers the new state fields with rollback on failure.
 
+Results:
+
+- Added typed batch actions for force start, all four torrent priorities, live superseeding and sequential-download toggles, session saving, and the `custom2`–`custom5` fields.
+- The torrent payload now includes authoritative sequential and superseeding state, so those controls and priority/custom field changes update optimistically and restore the prior rows if rTorrent rejects the request.
+- Reworked the toolbar to expose the full Off/Low/Normal/High priority set. The context menu now has ruTorrent-style Priority and Advanced submenus for force start, live toggles, session save, and custom fields.
+- Added fake-rTorrent command recording plus API/client coverage proving the extended actions reach their intended XML-RPC methods; malformed toggle and custom-field requests are rejected before any daemon call.
+- Documented the controls and per-torrent error/rollback behavior in the Compose user guide.
+
+Remaining:
+
+- Exercise these actions against the dedicated disposable real-rTorrent QA-5.2 integration target rather than a user torrent.
+- Add browser automation for toolbar priority selection, nested context menus, and optimistic rollback when the POL-3.1 harness is available.
+
 ### PAR-2.2 — Move data and set directory (P0)
 
 **As a** user, **I want** a safe, guided move flow **so that** I never type a path by hand.
@@ -196,6 +243,18 @@ Acceptance criteria:
 - Running torrents are stopped, moved, and restarted automatically; the dialog explains this and shows per-torrent results.
 - Path safety rules from `backlog.md` SEC-2.3 apply; symlink escapes and cross-root moves are refused with a clear message.
 - Tests cover same-device rename, cross-device copy, partial failure, and cancellation.
+
+Results:
+
+- Replaced free-text move prompts with a guided Move data dialog offering configured roots, per-label destinations, browser-persisted recents, and a server-constrained directory browser.
+- Added separate Move files and Set directory only modes, an asynchronous per-torrent job/result view, and cancellation for queued or copying work.
+- Running torrents are now stopped and restarted automatically; stopped torrents remain stopped. Cross-device moves copy then SHA-256 verify before deleting the source.
+- Enforced the configured-root boundary on both browser and move APIs, excluding symlink entries and refusing symlink sources or resolved escapes.
+- Added filesystem coverage for rename, cross-device fallback, partial failure, and cancellation, and documented the flow in the Compose guide.
+
+Remaining:
+
+- Add browser automation for destination browsing, live progress, cancellation, and running-torrent restart once the POL-3.1 harness is available.
 
 ### PAR-2.3 — Full tracker editing (P0)
 
@@ -209,6 +268,19 @@ Acceptance criteria:
 - Multi-select "Edit trackers" applies an add or remove across the selection with per-torrent results.
 - Tracker status text maps rTorrent's `t.latest_event`, `t.failed_counter`, `t.success_counter`, and `t.latest_new_peers` into Working / Failed (with reason) / Updating / Disabled / Not contacted.
 - Component and integration tests cover add, remove, disable, and private-torrent rendering.
+
+Results:
+
+- Added a distinct `tracker_remove` batch action backed by rTorrent’s `d.tracker.remove`; Disable/Enable continues to use `t.is_enabled.set` and no longer masquerades as removal.
+- Tracker additions now accept a non-negative group/tier and the detail list displays each tracker’s tier.
+- Extended tracker detail data with latest event, failed/success counters, and new-peer count; the UI maps those fields to Working, Failed, Updating, Disabled, and Not contacted states.
+- Added validation and client/API transport coverage for tracker removal and grouped additions, and rebuilt the healthy Compose appliance.
+
+Remaining:
+
+- Add DHT/PEX state to the detail payload and render private-torrent-disabled rows.
+- Add the multi-select Edit trackers workflow, including per-torrent batch results.
+- Add component/browser coverage for grouped rendering, disable/remove distinction, and private torrents once the POL-3.1 harness is available; run the disposable real-rTorrent integration target as part of QA-5.2.
 
 ### PAR-2.4 — Peers tab parity (P1)
 

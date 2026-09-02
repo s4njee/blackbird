@@ -109,9 +109,18 @@ volumes:
 ui:
   accent: "#2f9dff"
   visible_columns: [name, size, done, status]
+  saved_filters:
+    - name: Linux ISOs
+      query: "path:linux size>1gb"
+      status: downloading
   sort:
     column: name
     dir: asc
+    keys:
+      - column: name
+        dir: asc
+      - column: hash
+        dir: desc
 tuning:
   port_range: "51413-51420"
   port_random: true
@@ -163,6 +172,12 @@ tuning:
 	}
 	if cfg.UI.Sort.Column != "name" || cfg.UI.Sort.Dir != "asc" {
 		t.Fatalf("sort = %+v", cfg.UI.Sort)
+	}
+	if len(cfg.UI.Sort.Keys) != 2 || cfg.UI.Sort.Keys[1].Column != "hash" || cfg.UI.Sort.Keys[1].Dir != "desc" {
+		t.Fatalf("sort keys = %+v", cfg.UI.Sort.Keys)
+	}
+	if len(cfg.UI.SavedFilters) != 1 || cfg.UI.SavedFilters[0].Name != "Linux ISOs" || cfg.UI.SavedFilters[0].Status != "downloading" {
+		t.Fatalf("saved filters = %+v", cfg.UI.SavedFilters)
 	}
 }
 

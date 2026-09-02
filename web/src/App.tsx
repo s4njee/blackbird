@@ -3,13 +3,14 @@ import { ActionToolbar, ContextMenu } from "./components/ActionControls";
 import { AddTorrentModal } from "./components/AddTorrentModal";
 import { DetailPanel } from "./components/DetailPanel";
 import { LostConnectionBanner } from "./components/LostConnectionBanner";
+import { MoveDataModal } from "./components/MoveDataModal";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StatsView } from "./components/StatsView";
 import { Sidebar } from "./components/Sidebar";
 import { StatusBar } from "./components/StatusBar";
 import { TorrentTable, type ContextTarget } from "./components/TorrentTable";
 import { TopBar } from "./components/TopBar";
-import { hydrateColumnsFromConfig, route, toast } from "./store/ui";
+import { hydrateColumnsFromConfig, hydrateSavedFiltersFromConfig, hydrateSortFromConfig, route, toast } from "./store/ui";
 import "./styles/app.css";
 
 function SettingsView() {
@@ -39,11 +40,13 @@ function ConsoleView() {
 export default function App() {
   onMount(() => {
     void fetch("/api/settings", { headers: { Accept: "application/json" } })
-      .then((response) => response.ok ? response.json() as Promise<{ ui?: { columns?: unknown; visible_columns?: string[] } }> : null)
+      .then((response) => response.ok ? response.json() as Promise<{ ui?: { columns?: unknown; visible_columns?: string[]; saved_filters?: unknown; sort?: unknown } }> : null)
       .then((settings) => {
         if (!settings?.ui) return;
         if (settings.ui.columns) hydrateColumnsFromConfig(settings.ui.columns);
         else if (settings.ui.visible_columns?.length) hydrateColumnsFromConfig(settings.ui.visible_columns.map((key) => ({ key, visible: true })));
+        hydrateSavedFiltersFromConfig(settings.ui.saved_filters);
+        hydrateSortFromConfig(settings.ui.sort);
       })
       .catch(() => { /* session/auth errors leave the local defaults intact */ });
   });
@@ -53,6 +56,7 @@ export default function App() {
       <Show when={route() === "console"} fallback={<Show when={route() === "settings"} fallback={<StatsView />}><SettingsView /></Show>}><ConsoleView /></Show>
       <Show when={toast()}><div class="toast" role="status">{toast()}</div></Show>
       <AddTorrentModal />
+      <MoveDataModal />
     </div>
   );
 }

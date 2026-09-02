@@ -15,6 +15,7 @@ import type {
   Volume,
   WsEnvelope,
 } from "../lib/types";
+import { TorrentSearchIndex } from "../lib/filter";
 
 export type Connection = "connecting" | "connected" | "disconnected";
 
@@ -31,7 +32,10 @@ const [stale, setStale] = createSignal(false);
 const [connectedSince, setConnectedSince] = createSignal("");
 const [historySamples, setHistorySamples] = createSignal<RateSample[]>([]);
 const [details, setDetails] = createSignal<Record<string, TorrentDetail>>({});
+const emptyAggregates = (): Aggregates => ({ status: {}, labels: {}, trackers: {} });
+const [aggregates, setAggregates] = createSignal<Aggregates>(emptyAggregates());
 const [loadingDetail, setLoadingDetail] = createSignal("");
+const searchIndex = new TorrentSearchIndex();
 
 /** True when the socket is up and the daemon reports connected. */
 export const connected = createMemo(() => connection() === "connected");
@@ -44,33 +48,23 @@ export const torrentList = createMemo(() => {
     .map((h) => map[h]);
 });
 
-/**
- * Live sidebar counts derived from the tracked torrents. Deltas don't carry
- * aggregates, so the client recomputes them on every change.
- */
-export const aggregates = createMemo<Aggregates>(() => {
-  const status: Record<string, number> = {};
-  const labels: Record<string, number> = {};
-  const trackers: Record<string, number> = {};
-  for (const h in torrents()) {
-    const t = torrents()[h];
-    status[t.state] = (status[t.state] ?? 0) + 1;
-    const label = t.label || "unlabeled";
-    labels[label] = (labels[label] ?? 0) + 1;
-    if (t.trackerHost) trackers[t.trackerHost] = (trackers[t.trackerHost] ?? 0) + 1;
-  }
-  return { status, labels, trackers };
-});
+/** Server-computed sidebar counts, shared with the table's category rules. */
+export { aggregates };
 
 /** Total torrent count (mirrors aggregates but handy as a scalar). */
 export const torrentCount = createMemo(() => Object.keys(torrents()).length);
 
 function applySnapshot(snap: SessionSnapshot) {
   const byHash: Record<string, Torrent> = {};
-  for (const t of snap.torrents) byHash[t.hash] = t;
+  // A disconnected daemon may legitimately serialize its nil Go slice as
+  // null. Treat it as an empty snapshot so a reconnect can recover the UI.
+  const list = Array.isArray(snap.torrents) ? snap.torrents : [];
+  for (const t of list) byHash[t.hash] = t;
+  searchIndex.replace(list);
   setTorrents(byHash);
   setGlobalStats(snap.global);
   setVolumes(Array.isArray(snap.volumes) ? snap.volumes : []);
+  setAggregates(snap.aggregates ?? emptyAggregates());
   setConnection(snap.status === "connected" ? "connected" : "disconnected");
   setLastError(snap.lastError ?? "");
   setStale(snap.stale);
@@ -78,6 +72,7 @@ function applySnapshot(snap: SessionSnapshot) {
 }
 
 function applyDelta(d: Delta) {
+	if (d.aggregates) setAggregates(d.aggregates);
   if (d.status) {
     setConnection(d.status === "connected" ? "connected" : "disconnected");
   }
@@ -87,6 +82,7 @@ function applyDelta(d: Delta) {
   }
   const removed = d.removed;
   if (Array.isArray(removed) && removed.length) {
+    for (const hash of removed) searchIndex.remove(hash);
     setTorrents((prev) => {
       const next = { ...prev };
       for (const h of removed) delete next[h];
@@ -96,6 +92,7 @@ function applyDelta(d: Delta) {
   const added = d.added;
   const changed = d.changed;
   if ((Array.isArray(added) && added.length) || (Array.isArray(changed) && changed.length)) {
+    for (const torrent of [...(added ?? []), ...(changed ?? [])]) searchIndex.update(torrent);
     setTorrents((prev) => {
       const next = { ...prev };
       for (const t of added ?? []) next[t.hash] = t;
@@ -103,6 +100,11 @@ function applyDelta(d: Delta) {
       return next;
     });
   }
+}
+
+/** Queries use the incrementally-updated lowercase index, not live row strings. */
+export function searchMatches(torrent: Torrent, query: import("../lib/filter").ParsedQuery) {
+  return searchIndex.matches(torrent, query);
 }
 
 function appendSample(g: GlobalStats, at?: string) {

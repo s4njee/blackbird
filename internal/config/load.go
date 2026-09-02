@@ -147,6 +147,35 @@ func Validate(cfg *Config) []ValidationError {
 	if cfg.UI.Sort.Dir != "" && !contains([]string{"asc", "desc"}, cfg.UI.Sort.Dir) {
 		add([]string{"ui", "sort", "dir"}, "must be asc or desc")
 	}
+	if len(cfg.UI.Sort.Keys) > 2 {
+		add([]string{"ui", "sort", "keys"}, "supports at most a primary and secondary key")
+	}
+	seenSortKeys := map[string]bool{}
+	for i, key := range cfg.UI.Sort.Keys {
+		path := []string{"ui", "sort", "keys", fmt.Sprintf("[%d]", i)}
+		if strings.TrimSpace(key.Column) == "" {
+			add(append(path, "column"), "must not be empty")
+		}
+		if key.Dir != "asc" && key.Dir != "desc" {
+			add(append(path, "dir"), "must be asc or desc")
+		}
+		if seenSortKeys[key.Column] {
+			add(append(path, "column"), "duplicate sort column "+key.Column)
+		}
+		seenSortKeys[key.Column] = true
+	}
+	seenFilters := map[string]bool{}
+	for i, filter := range cfg.UI.SavedFilters {
+		path := []string{"ui", "saved_filters", fmt.Sprintf("[%d]", i), "name"}
+		if strings.TrimSpace(filter.Name) == "" {
+			add(path, "must not be empty")
+			continue
+		}
+		if seenFilters[filter.Name] {
+			add(path, "duplicate saved filter name "+filter.Name)
+		}
+		seenFilters[filter.Name] = true
+	}
 	if cfg.UI.DateFormat != "" && !contains([]string{"local", "iso"}, cfg.UI.DateFormat) {
 		add([]string{"ui", "date_format"}, "must be local or iso")
 	}

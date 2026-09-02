@@ -4,11 +4,12 @@ import { connected, globalStats, torrentList } from "../store/session";
 import { columnLayoutConfig, setSettingsDirty, showToast } from "../store/ui";
 
 type Label = { name: string; color: string };
+type SavedFilter = { name: string; query: string; status: string; label: string; tracker: string };
 type Draft = {
   tuning: Record<string, unknown>;
   directories: { default: string; per_label: Record<string, string>; watch?: string; watch_label?: string; session?: string };
   labels: Label[];
-  ui: { accent: string; columns: ColumnConfig[]; visible_columns: any; sort: { column: string; dir: "asc" | "desc" }; date_format: string; rate_format: string; poll_interval: string };
+  ui: { accent: string; columns: ColumnConfig[]; visible_columns: any; saved_filters: SavedFilter[]; sort: { column: string; dir: "asc" | "desc"; keys: Array<{ column: string; dir: "asc" | "desc" }> }; date_format: string; rate_format: string; poll_interval: string };
 };
 type Loaded = Draft & { daemon: Record<string, string> };
 type Nav = "General" | "Connection" | "Bandwidth" | "Queue" | "Directories" | "Labels" | "Interface" | "Advanced";
@@ -17,7 +18,7 @@ const NAV: Nav[] = ["General", "Connection", "Bandwidth", "Queue", "Directories"
 const COLUMNS = COLUMN_DEFINITIONS.map((column) => column.key);
 const NUMBER_TUNING = new Set(["dht_port", "http_max_open", "max_open_sockets", "max_open_files", "min_peers_normal", "max_peers_normal", "min_peers_seeded", "max_peers_seeded", "max_uploads", "global_down_rate_kb", "global_up_rate_kb", "max_downloads_global", "max_uploads_global"]);
 
-const EMPTY: Loaded = { tuning: {}, directories: { default: "", per_label: {} }, labels: [], ui: { accent: "#35418f", columns: [], visible_columns: [], sort: { column: "added", dir: "desc" }, date_format: "local", rate_format: "binary", poll_interval: "2s" }, daemon: {} };
+const EMPTY: Loaded = { tuning: {}, directories: { default: "", per_label: {} }, labels: [], ui: { accent: "#35418f", columns: [], visible_columns: [], saved_filters: [], sort: { column: "added", dir: "desc", keys: [] }, date_format: "local", rate_format: "binary", poll_interval: "2s" }, daemon: {} };
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const isInterface = (value: string) => value === "Interface";
 
@@ -30,7 +31,7 @@ function normalize(input: Partial<Loaded>): Loaded {
     ...input,
     tuning: input.tuning ?? {}, daemon: input.daemon ?? {}, labels: input.labels ?? [],
     directories: { ...base.directories, ...(input.directories ?? {}), per_label: input.directories?.per_label ?? {} },
-    ui: { ...base.ui, ...(input.ui ?? {}), columns, visible_columns: [], sort: { ...base.ui.sort, ...(input.ui?.sort ?? {}) } },
+    ui: { ...base.ui, ...(input.ui ?? {}), columns, visible_columns: [], saved_filters: input.ui?.saved_filters ?? [], sort: { ...base.ui.sort, ...(input.ui?.sort ?? {}), keys: input.ui?.sort?.keys ?? [] } },
   };
 }
 

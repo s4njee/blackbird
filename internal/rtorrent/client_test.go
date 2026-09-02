@@ -123,6 +123,9 @@ func TestListTorrentsMapping(t *testing.T) {
 				0, 0, 0, "", 1756400000, "/mnt/data/checking", false,
 				0, 0, 0, "http://x.example/announce"),
 		}}
+		// d.is_open is independent of the normalized state and powers the
+		// ruTorrent-compatible Inactive category.
+		rows.Array[1].Array[19] = boolV(true)
 		return []xmlrpc.Value{rows}, nil
 	})
 	c := newTestClient(t, f)
@@ -159,7 +162,7 @@ func TestListTorrentsMapping(t *testing.T) {
 	}
 
 	sd := ts[1]
-	if sd.State != StateSeeding || sd.Percent != 100 || sd.EtaSeconds != -1 {
+	if sd.State != StateSeeding || !sd.Complete || !sd.IsOpen || sd.Percent != 100 || sd.EtaSeconds != -1 {
 		t.Fatalf("seeding row: %+v", sd)
 	}
 
@@ -186,7 +189,7 @@ func TestListTorrentsExtendedFields(t *testing.T) {
 			i8V(6000), i8V(123456), i8V(234567), i8V(1756800000), strV("slow"),
 			strV("ratio-2"), strV("custom-3"), strV("custom-4"), strV("custom-5"),
 			strV("/downloads/media/extended.torrent"), i8V(8), i8V(10), i8V(987),
-			boolV(true), strV("/downloads/media"), strV("leech"), i8V(1756600000),
+			boolV(true), strV("/downloads/media"), strV("leech"), i8V(1756600000), boolV(true), boolV(false),
 		)
 		return []xmlrpc.Value{{Type: "array", Array: []xmlrpc.Value{base}}}, nil
 	})
@@ -212,6 +215,9 @@ func TestListTorrentsExtendedFields(t *testing.T) {
 	}
 	if torrent.Directory != "/downloads/media" || torrent.Connection != "leech" {
 		t.Fatalf("path fields = %+v", torrent)
+	}
+	if !torrent.Superseeding || torrent.Sequential {
+		t.Fatalf("live action fields = %+v", torrent)
 	}
 }
 
@@ -364,13 +370,34 @@ func TestActionsRecorded(t *testing.T) {
 	if err := c.SetPriority(ctx, "h1", 3); err != nil {
 		t.Fatal(err)
 	}
+	if err := c.ForceStart(ctx, "h1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetSuperseeding(ctx, "h1", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetSequential(ctx, "h1", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SaveSession(ctx, "h1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetCustom(ctx, "h1", "custom4", "note"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetCustom(ctx, "h1", "custom1", "forbidden"); err == nil {
+		t.Fatal("SetCustom(custom1) unexpectedly succeeded")
+	}
 	if err := c.Announce(ctx, "h1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.AddTracker(ctx, "h1", "http://t/announce"); err != nil {
+	if err := c.AddTracker(ctx, "h1", "http://t/announce", 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.SetTrackerEnabled(ctx, "h1", 0, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemoveTracker(ctx, "h1", 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.AddMagnet(ctx, "magnet:?xt=urn:btih:abc", AddOptions{Start: true}); err != nil {
@@ -387,7 +414,8 @@ func TestActionsRecorded(t *testing.T) {
 		"d.open": true, "d.start": true, "d.resume": true, "d.pause": true, "d.stop": true, "d.check_hash": true,
 		"d.custom1.set": true, "d.directory.set": true, "f.priority.set": true,
 		"d.priority.set": true, "d.tracker_announce": true, "d.tracker.insert": true,
-		"t.is_enabled.set": true, "load.start": true, "load.normal": true,
+		"d.connection_seed.set": true, "d.sequential.set": true, "d.save_full_session": true, "d.custom4.set": true,
+		"t.is_enabled.set": true, "d.tracker.remove": true, "load.start": true, "load.normal": true,
 		"throttle.global_up.max_rate.set": true,
 	} {
 		if f.saw(method) != want {

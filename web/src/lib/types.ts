@@ -11,6 +11,8 @@ export interface Torrent {
   downloadedBytes: number;
   uploadedBytes: number;
   percent: number;
+  complete: boolean;
+  isOpen: boolean;
   state: string; // downloading | seeding | stopped | queued | checking | error
   message: string;
   checkingPercent: number;
@@ -42,6 +44,8 @@ export interface Torrent {
   isPrivate: boolean;
   basePath: string;
   priority: number;
+  superseeding: boolean;
+  sequential: boolean;
 }
 
 /** Global session stats for the status bar and top bar (rtorrent.GlobalStats). */
@@ -92,6 +96,7 @@ export interface Delta {
   globalChanged?: boolean;
   global?: GlobalStats;
   status?: "connected" | "disconnected";
+  aggregates?: Aggregates;
   at?: string; // RFC3339
 }
 
@@ -130,6 +135,10 @@ export interface Tracker {
   seeds: number;
   leechers: number;
   nextAnnounceAt: string;
+  latestEvent: string;
+  failedCount: number;
+  successCount: number;
+  newPeers: number;
 }
 
 export interface Transfer {

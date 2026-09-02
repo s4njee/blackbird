@@ -25,6 +25,7 @@ type Daemon struct {
 
 	includeStopped bool
 	fail           *Failure
+	calls          []string
 }
 
 // Options configures a started daemon.
@@ -128,13 +129,11 @@ func (d *Daemon) handle(conn net.Conn) {
 }
 
 func (d *Daemon) response(method string, params []xmlrpc.Value) ([]xmlrpc.Value, *xmlrpc.Fault) {
-	if d.LogCalls {
-		d.mu.Lock()
-		os.Stderr.WriteString("fakertorrent: " + method + "\n")
-		d.mu.Unlock()
-	}
-
 	d.mu.Lock()
+	d.calls = append(d.calls, method)
+	if d.LogCalls {
+		os.Stderr.WriteString("fakertorrent: " + method + "\n")
+	}
 	fail := d.fail
 	includeStopped := d.includeStopped
 	d.mu.Unlock()
@@ -363,3 +362,11 @@ var _ = xml.Name{}
 // Stop closes the listener, ending the daemon (tests restart it to exercise
 // disconnect/reconnect flows).
 func (d *Daemon) Stop() { d.ln.Close() }
+
+// CallMethods returns a stable copy of every XML-RPC method received. Tests
+// use it to assert that typed API actions produce the intended rTorrent call.
+func (d *Daemon) CallMethods() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.calls...)
+}

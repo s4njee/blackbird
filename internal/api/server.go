@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 
@@ -41,6 +42,9 @@ type Server struct {
 	upgrader websocket.Upgrader
 	handler  http.Handler
 	unsub    func()
+	moveMu   sync.Mutex
+	moves    map[string]*moveJob
+	moveSeq  uint64
 }
 
 // New builds the API server. The caller should invoke Close on shutdown to
@@ -56,6 +60,7 @@ func New(opts Options, auth *Auth) *Server {
 			// the Vite dev server (proxied /ws) works during development.
 			CheckOrigin: func(*http.Request) bool { return true },
 		},
+		moves: map[string]*moveJob{},
 	}
 
 	mux := http.NewServeMux()
@@ -65,6 +70,10 @@ func New(opts Options, auth *Auth) *Server {
 	mux.HandleFunc("GET /api/stats", s.statsHandler)
 	mux.HandleFunc("GET /api/torrents/{hash}", s.detailHandler)
 	mux.HandleFunc("POST /api/torrents/action", s.actionHandler)
+	mux.HandleFunc("GET /api/directories", s.directoryHandler)
+	mux.HandleFunc("POST /api/torrents/move", s.moveStartHandler)
+	mux.HandleFunc("GET /api/torrents/move/{id}", s.moveStatusHandler)
+	mux.HandleFunc("POST /api/torrents/move/{id}/cancel", s.moveCancelHandler)
 	mux.HandleFunc("POST /api/torrents/add", s.addHandler)
 	mux.HandleFunc("GET /api/settings", s.settingsGetHandler)
 	mux.HandleFunc("POST /api/settings", s.settingsSaveHandler)

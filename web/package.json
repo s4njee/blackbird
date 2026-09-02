@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "rm -rf .test-dist && tsc --target ES2022 --module ES2022 --moduleResolution bundler --outDir .test-dist src/lib/filter.ts src/lib/sort.ts && node test/filter.test.mjs && rm -rf .test-dist"
   },
   "dependencies": {
     "solid-js": "^1.9.5"

@@ -29,7 +29,9 @@ type Torrent struct {
 	LeftBytes       int64     `json:"leftBytes"`
 	DownloadedBytes int64     `json:"downloadedBytes"`
 	UploadedBytes   int64     `json:"uploadedBytes"`
-	Percent         float64   `json:"percent"` // derived: completed/size
+	Percent         float64   `json:"percent"`  // derived: completed/size
+	Complete        bool      `json:"complete"` // d.complete; independent of the UI state
+	IsOpen          bool      `json:"isOpen"`   // d.is_open; used by the Inactive category
 	State           State     `json:"state"`
 	Message         string    `json:"message"`         // daemon error message when State == error
 	CheckingPercent float64   `json:"checkingPercent"` // progress while hash-checking (best effort)
@@ -60,7 +62,9 @@ type Torrent struct {
 	TrackerStatus   string    `json:"trackerStatus"`
 	IsPrivate       bool      `json:"isPrivate"`
 	BasePath        string    `json:"basePath"`
-	Priority        int       `json:"priority"` // 0 off, 1 low, 2 normal, 3 high
+	Priority        int       `json:"priority"`     // 0 off, 1 low, 2 normal, 3 high
+	Superseeding    bool      `json:"superseeding"` // d.connection_seed
+	Sequential      bool      `json:"sequential"`   // d.sequential
 }
 
 // File is one entry of the f.multicall detail.
@@ -102,6 +106,10 @@ type Tracker struct {
 	Seeds        int       `json:"seeds"`
 	Leechers     int       `json:"leechers"`
 	NextAnnounce time.Time `json:"nextAnnounceAt"` // resolved from t.next_scrape
+	LatestEvent  string    `json:"latestEvent"`
+	FailedCount  int       `json:"failedCount"`
+	SuccessCount int       `json:"successCount"`
+	NewPeers     int       `json:"newPeers"`
 }
 
 // Transfer holds per-torrent transfer facts for the detail panel.

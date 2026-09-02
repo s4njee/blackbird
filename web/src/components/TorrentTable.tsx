@@ -1,14 +1,15 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { formatBytes, formatDate, formatRatio, formatRate, formatSeedingTime, formatUptime } from "../lib/format";
 import { COLUMN_DEFINITIONS, columnDefinition, type ColumnKey } from "../lib/columns";
+import { matchesStatus, parseQuery } from "../lib/filter";
+import { IncrementalTorrentSorter } from "../lib/sort";
 import type { Torrent } from "../lib/types";
-import { connection, torrentList } from "../store/session";
+import { connection, searchMatches, torrentList } from "../store/session";
 import {
   changeSort, clearFilters, columnLayout, filters, pruneSelection, query, reorderColumns, resetColumns, selectAllVisible, selectOnly,
   selectRange, selectedSet, setColumnWidth, setShownTorrentCount, setVisibleHashes, sort, toggleColumn, toggleSelection, openAdd,
   visibleColumnKeys,
 } from "../store/ui";
-import type { SortColumn } from "../store/ui";
 
 export type ContextTarget = { x: number; y: number; hashes: string[]; torrent?: Torrent };
 
@@ -22,19 +23,6 @@ function formatEta(seconds: number) {
   if (seconds < 0) return "∞";
   if (!Number.isFinite(seconds) || seconds === 0) return "—";
   return formatUptime(seconds);
-}
-
-function compare(a: Torrent, b: Torrent, key: ColumnKey) {
-  const value = (row: Torrent) => {
-    if (key === "percent") return row.percent;
-    if (key === "seedsPeers") return row.seeds + row.peers;
-    if (key === "seedingTime") return row.finishedAt;
-    return row[key];
-  };
-  const av = value(a);
-  const bv = value(b);
-  if (typeof av === "number" && typeof bv === "number") return av - bv;
-  return String(av ?? "").localeCompare(String(bv ?? ""));
 }
 
 function priorityLabel(priority: number) {
@@ -88,6 +76,7 @@ export function TorrentTable(props: { onContextMenu: (target: ContextTarget) => 
   const [columnMenu, setColumnMenu] = createSignal<{ x: number; y: number } | null>(null);
   const [draggedColumn, setDraggedColumn] = createSignal<ColumnKey | null>(null);
   const [debouncedQuery, setDebouncedQuery] = createSignal("");
+  const sorter = new IncrementalTorrentSorter();
   let tableRef: HTMLTableElement | undefined;
   const columns = createMemo(() => visibleColumnKeys().map((key) => columnDefinition(key)));
   // Name deliberately has no fixed column width so it absorbs extra space.
@@ -140,16 +129,9 @@ export function TorrentTable(props: { onContextMenu: (target: ContextTarget) => 
   });
   const rows = createMemo(() => {
     const f = filters();
-    const q = debouncedQuery();
-    const { column, direction } = sort();
-    return torrentList()
-      .filter((t) => (!f.status || t.state === f.status) && (!f.label || (t.label || "unlabeled") === f.label) && (!f.tracker || t.trackerHost === f.tracker) && (!q || t.name.toLowerCase().includes(q)))
-      .slice()
-      .sort((a, b) => {
-        const value = compare(a, b, column);
-        const primary = direction === "asc" ? value : -value;
-        return primary || a.name.localeCompare(b.name);
-      });
+    const q = parseQuery(debouncedQuery());
+    const filtered = torrentList().filter((t) => matchesStatus(t, f.status) && (!f.label || (t.label || "unlabeled") === f.label) && (!f.tracker || t.trackerHost === f.tracker) && searchMatches(t, q));
+    return sorter.sort(filtered, sort());
   });
   const hashes = createMemo(() => rows().map((row) => row.hash));
   createEffect(() => { const next = rows().map((row) => row.hash); setShownTorrentCount(next.length); setVisibleHashes(next); });
@@ -174,7 +156,7 @@ export function TorrentTable(props: { onContextMenu: (target: ContextTarget) => 
         <table class="torrent-table" ref={tableRef} style={{ "min-width": tableMinWidth() }}>
           <colgroup><col class="check-col" /><For each={columns()}>{(column) => <col class={column.class} style={{ width: "fluid" in column ? undefined : `${columnLayout().widths[column.key] ?? column.width}px` }} />}</For></colgroup>
           <thead><tr><th class="check-head" aria-label="Select all"><button type="button" class="row-checkbox" classList={{ checked: rows().length > 0 && rows().every((r) => selectedSet().has(r.hash)) }} onClick={() => selectAllVisible(hashes())} /></th>
-            <For each={columns()}>{(column) => <th class={column.class} draggable="true" classList={{ sorted: sort().column === column.key }} onContextMenu={openColumnMenu} onClick={() => changeSort(column.key as SortColumn)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer?.setData("text/column", column.key); if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"; }} onDragOver={(event) => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); const source = draggedColumn() ?? event.dataTransfer?.getData("text/column") as ColumnKey; if (source) reorderColumns(source, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)}><span class="column-header-label">{column.label}<Show when={sort().column === column.key}><span class="sort-caret">{sort().direction === "asc" ? "▲" : "▼"}</span></Show></span><span class="column-resize-handle" title="Drag to resize; double-click to auto-fit" onMouseDown={(event) => beginResize(event, column.key)} onDblClick={(event) => autoFit(event, column.key)} /></th>}</For>
+            <For each={columns()}>{(column) => { const sortKey = () => sort().find((key) => key.column === column.key); const sortIndex = () => sort().findIndex((key) => key.column === column.key); return <th class={column.class} draggable="true" title="Click to sort; Shift-click for a secondary sort" aria-sort={sortIndex() === 0 ? (sortKey()?.direction === "asc" ? "ascending" : "descending") : undefined} classList={{ sorted: sortIndex() >= 0 }} onContextMenu={openColumnMenu} onClick={(event) => changeSort(column.key, event.shiftKey)} onDragStart={(event) => { setDraggedColumn(column.key); event.dataTransfer?.setData("text/column", column.key); if (event.dataTransfer) event.dataTransfer.effectAllowed = "move"; }} onDragOver={(event) => { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = "move"; }} onDrop={(event) => { event.preventDefault(); const source = draggedColumn() ?? event.dataTransfer?.getData("text/column") as ColumnKey; if (source) reorderColumns(source, column.key); setDraggedColumn(null); }} onDragEnd={() => setDraggedColumn(null)}><span class="column-header-label">{column.label}<Show when={sortKey()}>{(key) => <span class="sort-caret">{key().direction === "asc" ? "▲" : "▼"}{sortIndex() > 0 ? <sup>{sortIndex() + 1}</sup> : ""}</span>}</Show></span><span class="column-resize-handle" title="Drag to resize; double-click to auto-fit" onMouseDown={(event) => beginResize(event, column.key)} onDblClick={(event) => autoFit(event, column.key)} /></th>; }}</For>
           </tr></thead>
           <tbody>
             <For each={rows()}>{(row) => <tr classList={{ selected: selectedSet().has(row.hash) }} onClick={(event) => selectRow(event, row)} onContextMenu={(event) => context(event, row)}>

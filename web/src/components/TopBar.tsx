@@ -1,7 +1,7 @@
 import { createMemo } from "solid-js";
 import { splitRate } from "../lib/format";
 import { globalStats } from "../store/session";
-import { openAdd, setQuery, query, route, setRoute, settingsDirty } from "../store/ui";
+import { openAdd, saveCurrentFilter, setQuery, query, route, setRoute, settingsDirty, showToast } from "../store/ui";
 import { Sparkline } from "./Sparkline";
 
 /** Top bar (44px): brand, live global rates, sparkline, filter, actions. */
@@ -43,6 +43,16 @@ export function TopBar() {
           onInput={(e) => setQuery(e.currentTarget.value)}
           spellcheck={false}
         />
+        <details class="filter-help">
+          <summary aria-label="Search help" title="Search syntax">?</summary>
+          <div class="filter-help-popover">
+            <b>Search and filters</b>
+            <span>Plain text searches name, hash prefix, path, tracker, and message.</span>
+            <span><code>label:</code> <code>tracker:</code> <code>path:</code> <code>status:</code></span>
+            <span><code>ratio&gt;1.5</code> <code>size&lt;4GB</code></span>
+            <button type="button" onClick={() => { saveCurrentFilter(); showToast("Filter saved to the sidebar."); }}>Save current filter</button>
+          </div>
+        </details>
       </div>
       <button class="btn-add" type="button" onClick={() => openAdd()}>
         + Add torrent

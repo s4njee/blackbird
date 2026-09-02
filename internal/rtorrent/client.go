@@ -124,6 +124,7 @@ var listCommands = []string{
 	"d.directory=",          // 39
 	"d.connection_current=", // 40
 	"d.creation_date=",      // 41
+	"d.connection_seed=",    // 42
 }
 
 // ListTorrents returns the normalized torrent list via one d.multicall2.
@@ -165,6 +166,8 @@ func mapTorrent(v []xmlrpc.Value) Torrent {
 		Name:            sval(get(1)),
 		SizeBytes:       ival(get(2)),
 		CompletedBytes:  ival(get(3)),
+		Complete:        bval(get(5)),
+		IsOpen:          bval(get(19)),
 		LeftBytes:       ival(get(25)),
 		UploadedBytes:   ival(get(26)),
 		DownloadedBytes: ival(get(27)),
@@ -187,6 +190,7 @@ func mapTorrent(v []xmlrpc.Value) Torrent {
 		BasePath:        sval(get(15)),
 		IsPrivate:       bval(get(16)),
 		Priority:        int(ival(get(21))),
+		Superseeding:    bval(get(42)),
 	}
 	t.RatioGroup = t.Custom2
 	if strings.TrimSpace(sval(get(8))) != "" {
@@ -247,11 +251,11 @@ func mapTorrent(v []xmlrpc.Value) Torrent {
 
 	t.State, t.Message = normalizeState(
 		int(ival(get(4))), // state
-		bval(get(5)),      // complete
+		t.Complete,        // complete
 		bval(get(6)),      // is_hash_checking
 		int(ival(get(7))), // hashing
 		sval(get(8)),      // message
-		bval(get(19)),     // is_open
+		t.IsOpen,          // is_open
 		bval(get(20)),     // is_active
 	)
 	if t.State == StateChecking && sizeChunks > 0 {
@@ -321,7 +325,7 @@ func trackerHost(urls []string) string {
 const (
 	filesDetailCall    = "f.multicall=,f.path=,f.size_bytes=,f.completed_chunks=,f.size_chunks=,f.priority="
 	peersDetailCall    = "p.multicall=,p.id=,p.address=,p.port=,p.client_version=,p.completed_percent=,p.down_rate=,p.up_rate=,p.is_encrypted=,p.is_incoming=,p.is_snubbed="
-	trackersDetailCall = "t.multicall=,t.url=,t.is_enabled=,t.group=,t.scrape_complete=,t.scrape_incomplete=,t.success_time_next="
+	trackersDetailCall = "t.multicall=,t.url=,t.is_enabled=,t.group=,t.scrape_complete=,t.scrape_incomplete=,t.success_time_next=,t.latest_event=,t.failed_counter=,t.success_counter=,t.latest_new_peers="
 )
 
 // detailRow evaluates the nested f./p./t.multicall commands in a download
@@ -441,12 +445,13 @@ func mapTrackers(rows []xmlrpc.Value) []Tracker {
 			return xmlrpc.Value{Type: "string"}
 		}
 		tr := Tracker{
-			Index:     i,
-			URL:       sval(g(0)),
-			IsEnabled: bval(g(1)),
-			Group:     int(ival(g(2))),
-			Seeds:     int(ival(g(3))),
-			Leechers:  int(ival(g(4))),
+			Index:       i,
+			URL:         sval(g(0)),
+			IsEnabled:   bval(g(1)),
+			Group:       int(ival(g(2))),
+			Seeds:       int(ival(g(3))),
+			Leechers:    int(ival(g(4))),
+			LatestEvent: sval(g(6)), FailedCount: int(ival(g(7))), SuccessCount: int(ival(g(8))), NewPeers: int(ival(g(9))),
 		}
 		if ns := ival(g(5)); ns > 0 {
 			tr.NextAnnounce = time.Unix(ns, 0)
@@ -532,8 +537,13 @@ func (c *Client) Start(ctx context.Context, hash string) error {
 	}
 	return nil
 }
-func (c *Client) Pause(ctx context.Context, hash string) error { return c.call(ctx, "d.pause", hash) }
-func (c *Client) Stop(ctx context.Context, hash string) error  { return c.call(ctx, "d.stop", hash) }
+
+// ForceStart opens and starts a torrent without waiting for rTorrent's queue.
+// The normal start path already uses the required d.open + d.start sequence;
+// keeping a named method makes the transport contract explicit to callers.
+func (c *Client) ForceStart(ctx context.Context, hash string) error { return c.Start(ctx, hash) }
+func (c *Client) Pause(ctx context.Context, hash string) error      { return c.call(ctx, "d.pause", hash) }
+func (c *Client) Stop(ctx context.Context, hash string) error       { return c.call(ctx, "d.stop", hash) }
 func (c *Client) Recheck(ctx context.Context, hash string) error {
 	return c.call(ctx, "d.check_hash", hash)
 }
@@ -571,9 +581,47 @@ func (c *Client) SetPriority(ctx context.Context, hash string, priority int) err
 	return c.call(ctx, "d.priority.set", hash, strconv.Itoa(priority))
 }
 
+// SetSuperseeding controls rTorrent's superseed (connection seed) mode.
+func (c *Client) SetSuperseeding(ctx context.Context, hash string, enabled bool) error {
+	return c.call(ctx, "d.connection_seed.set", hash, boolParam(enabled))
+}
+
+// SetSequential controls live sequential download mode.
+func (c *Client) SetSequential(ctx context.Context, hash string, enabled bool) error {
+	return c.call(ctx, "d.sequential.set", hash, boolParam(enabled))
+}
+
+// SaveSession writes this torrent's current resume/session state to disk.
+func (c *Client) SaveSession(ctx context.Context, hash string) error {
+	return c.call(ctx, "d.save_full_session", hash)
+}
+
+// SetCustom writes one of rTorrent's auxiliary custom fields. custom1 is
+// deliberately excluded here because SetLabel owns the user-facing label.
+func (c *Client) SetCustom(ctx context.Context, hash, field, value string) error {
+	switch field {
+	case "custom2", "custom3", "custom4", "custom5":
+	default:
+		return fmt.Errorf("unsupported custom field %q", field)
+	}
+	return c.call(ctx, "d."+field+".set", hash, value)
+}
+
+func boolParam(enabled bool) string {
+	if enabled {
+		return "1"
+	}
+	return "0"
+}
+
 // AddTracker inserts a tracker (group 0) for a torrent.
-func (c *Client) AddTracker(ctx context.Context, hash, url string) error {
-	return c.call(ctx, "d.tracker.insert", hash, "0", url)
+func (c *Client) AddTracker(ctx context.Context, hash, url string, group int) error {
+	return c.call(ctx, "d.tracker.insert", hash, strconv.Itoa(group), url)
+}
+
+// RemoveTracker removes the tracker entry entirely (rather than disabling it).
+func (c *Client) RemoveTracker(ctx context.Context, hash string, trackerIndex int) error {
+	return c.call(ctx, "d.tracker.remove", hash, strconv.Itoa(trackerIndex))
 }
 
 // SetTrackerEnabled enables/disables a tracker by its index in the tracker

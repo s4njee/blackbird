@@ -110,6 +110,18 @@ type UI struct {
 	DateFormat     string   `yaml:"date_format" json:"date_format"`
 	RateFormat     string   `yaml:"rate_format" json:"rate_format"`
 	PollInterval   string   `yaml:"poll_interval" json:"poll_interval"`
+	// SavedFilters seeds browser-local sidebar filters when no local filters
+	// have been saved yet. Browser changes never overwrite this operator default.
+	SavedFilters []SavedFilter `yaml:"saved_filters" json:"saved_filters"`
+}
+
+// SavedFilter is an operator-provided default for a named, pinned search.
+type SavedFilter struct {
+	Name    string `yaml:"name" json:"name"`
+	Query   string `yaml:"query" json:"query"`
+	Status  string `yaml:"status" json:"status"`
+	Label   string `yaml:"label" json:"label"`
+	Tracker string `yaml:"tracker" json:"tracker"`
 }
 
 // Column describes one table column in the persisted operator layout.
@@ -135,6 +147,14 @@ func (u *UI) MigrateColumns() {
 type Sort struct {
 	Column string `yaml:"column" json:"column"` // e.g. "added"
 	Dir    string `yaml:"dir" json:"dir"`       // asc | desc
+	// Keys supports a primary and optional secondary sort. Column/Dir remain
+	// read-compatible with the original single-key configuration.
+	Keys []SortKey `yaml:"keys" json:"keys"`
+}
+
+type SortKey struct {
+	Column string `yaml:"column" json:"column"`
+	Dir    string `yaml:"dir" json:"dir"`
 }
 
 // Tuning declares rTorrent runtime settings applied on (re)connect via their
