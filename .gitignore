@@ -1,0 +1,6 @@
+.env
+.env.*
+deploy/.env
+deploy/config.yml
+data/
+web/node_modules/

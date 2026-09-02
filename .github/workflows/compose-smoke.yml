@@ -1,0 +1,63 @@
+name: Compose appliance smoke test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run unit tests
+        run: go test ./...
+      - name: Validate deployment scripts
+        run: sh -n blackbird-entrypoint.sh deploy/*.sh
+      - name: Validate Compose files
+        run: |
+          docker compose config -q
+          docker compose -f docker-compose.yml -f deploy/docker-compose.linux.yml config -q
+          docker compose -f docker-compose.yml -f deploy/docker-compose.macos.yml config -q
+      - name: Verify macOS paths with spaces
+        run: ./deploy/verify-macos-paths.sh
+      - name: Build and exercise appliance
+        run: ./deploy/smoke-test.sh
+      - name: Verify named-volume persistence
+        run: ./deploy/named-volume-smoke.sh
+
+  multiarch-build:
+    name: Build appliance images (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build Blackbird image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: false
+          tags: blackbird/blackbird:ci
+          outputs: type=oci,dest=/tmp/blackbird.oci.tar
+      - name: Build rTorrent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/rtorrent/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: false
+          tags: blackbird/rtorrent:ci
+          outputs: type=oci,dest=/tmp/rtorrent.oci.tar

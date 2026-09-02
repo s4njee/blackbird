@@ -1,0 +1,73 @@
+import { createMemo } from "solid-js";
+import { splitRate } from "../lib/format";
+import { globalStats } from "../store/session";
+import { openAdd, setQuery, query, route, setRoute, settingsDirty } from "../store/ui";
+import { Sparkline } from "./Sparkline";
+
+/** Top bar (44px): brand, live global rates, sparkline, filter, actions. */
+export function TopBar() {
+  const rates = createMemo(() => {
+    const g = globalStats();
+    return {
+      down: g ? splitRate(g.downRate) : { value: "—", unit: "" },
+      up: g ? splitRate(g.upRate) : { value: "—", unit: "" },
+    };
+  });
+
+  return (
+    <header class="topbar">
+      <img class="logo-mark" src="/icon.jpg" alt="" aria-hidden="true" />
+      <span class="wordmark">Blackbird</span>
+      <span class="tb-divider" aria-hidden="true" />
+      <div class="rates">
+        <span class="rate">
+          <span class="rate-glyph down" aria-hidden="true">▼</span>
+          <span class="tnum rate-value">{rates().down.value}</span>
+          <span class="rate-unit">{rates().down.unit}</span>
+        </span>
+        <span class="rate">
+          <span class="rate-glyph up" aria-hidden="true">▲</span>
+          <span class="tnum rate-value">{rates().up.value}</span>
+          <span class="rate-unit">{rates().up.unit}</span>
+        </span>
+      </div>
+      <Sparkline />
+      <span class="tb-spacer" />
+      <div class="filter">
+        <span class="filter-glyph" aria-hidden="true">⌕</span>
+        <input
+          class="filter-input"
+          type="text"
+          placeholder="Filter torrents…"
+          value={query()}
+          onInput={(e) => setQuery(e.currentTarget.value)}
+          spellcheck={false}
+        />
+      </div>
+      <button class="btn-add" type="button" onClick={() => openAdd()}>
+        + Add torrent
+      </button>
+      <button
+        class="btn-icon"
+        type="button"
+        title={route() === "stats" ? "Back to console" : "Session statistics"}
+        aria-label={route() === "stats" ? "Back to console" : "Session statistics"}
+        onClick={() => setRoute(route() === "stats" ? "console" : "stats")}
+      >
+        ▥
+      </button>
+      <button
+        class="btn-icon"
+        type="button"
+        title={route() === "settings" ? "Back to console" : "Settings"}
+        aria-label={route() === "settings" ? "Back to console" : "Settings"}
+        onClick={() => {
+          if (route() === "settings" && settingsDirty() && !window.confirm("Discard unsaved settings changes?")) return;
+          setRoute(route() === "settings" ? "console" : "settings");
+        }}
+      >
+        ⚙
+      </button>
+    </header>
+  );
+}

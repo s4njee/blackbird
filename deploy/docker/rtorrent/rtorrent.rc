@@ -1,0 +1,21 @@
+# Blackbird appliance rTorrent configuration.
+# The SCGI endpoint is reachable only on the private Compose network because
+# the Compose service intentionally does not publish port 5000 to the host.
+
+system.umask.set = 0027
+system.daemon.set = true
+
+session.path.set = /data/session
+directory.default.set = /downloads
+
+network.scgi.open_port = 0.0.0.0:5000
+network.xmlrpc.size_limit.set = 16M
+
+dht.mode.set = auto
+dht.port.set = 6881
+protocol.pex.set = yes
+protocol.encryption.set = allow_incoming,enable_retry,prefer_plaintext
+
+# Watch directories are mounted for Blackbird and host workflows. Automatic
+# loading is intentionally orchestrated by the application rather than legacy
+# schedule commands that vary between rTorrent builds.

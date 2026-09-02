@@ -1,0 +1,130 @@
+/*
+ * Design tokens — single source of truth, transcribed from
+ * design_handoff_rtorrent_console/README.md. Components must never use
+ * hard-coded hex values; reference these custom properties instead.
+ */
+
+:root {
+  /* ---- Backgrounds ---- */
+  --bg-canvas: #0b0c0d;         /* page backdrop outside the app window */
+  --bg-app: #101214;            /* app window base, odd table rows */
+  --bg-row-alt: #121417;        /* alternating table rows, action toolbar */
+  --bg-panel: #0e1012;          /* sidebar, detail panel, stat sub-panels, inputs */
+  --bg-chrome: #15181b;         /* top bar, table header, tab strip, status bar, cards */
+  --bg-elevated: #1a1e22;       /* context menu, popovers */
+  --bg-control: #1b1f23;        /* toolbar buttons */
+  --bg-control-active: #1f2429; /* selected segmented-control segment */
+  --bg-track: #1e2226;          /* progress-bar troughs, neutral chips */
+  --bg-track-dim: #191c20;      /* row bottom border, skipped-file chips */
+
+  /* ---- Borders ---- */
+  --border-strong: #33383e;     /* modal + popover borders, dashed dropzone */
+  --border-default: #26292e;    /* panel and section dividers */
+  --border-control: #2c3035;    /* buttons, inputs */
+  --border-subtle: #1c1f23;     /* table column dividers */
+  --border-row: #191c20;        /* main table row separators */
+  --border-row-dim: #17191c;    /* detail/peer table row separators */
+
+  /* ---- Text ---- */
+  --text-primary: #e8eaed;      /* headings, emphasized values */
+  --text-body: #d6d9dd;         /* default body text, table cells */
+  --text-secondary: #b6bbc1;    /* sidebar items, secondary labels */
+  --text-muted: #9aa0a7;        /* numeric cells, column headers */
+  --text-dim: #8b9199;          /* inactive tabs, complete-status text */
+  --text-faint: #7c828a;        /* meta text, stopped status */
+  --text-fainter: #6b7178;      /* hints, timestamps, tracker column */
+  --text-ghost: #5d6369;        /* section captions, placeholder text */
+
+  /* ---- State ---- */
+  --state-disabled: #4b5158;    /* em-dash cells, stopped + incomplete bar fill */
+
+  /*
+   * Accent — the single tweakable theming variable. Changing --accent
+   * re-tints selection, chips, sidebar active states, and graphs.
+   * The product default is a deep navy-indigo; per-user themes can override
+   * this single token without changing the fixed progress palette.
+   */
+  --accent: #35418f;
+  --accent-tint: rgba(53, 65, 143, 0.22);   /* selected row bg */
+  --accent-tint-strong: rgba(53, 65, 143, 0.30); /* sidebar active, chips, graph fill */
+  --accent-text: #a6afff;       /* accent text on tinted chips, link hover */
+  --accent-foreground: #f4f2ff; /* text on solid accent controls */
+
+  /* ---- Rates ---- */
+  --rate-up: #22d3ee;           /* upload rate, peer "have" bars, PEX/DHT rows */
+  --rate-up-text: #8ae4ef;      /* upload-ish text on tinted chips */
+
+  /*
+   * Progress — deliberately NOT the accent. Blue below 100%, green at 100%,
+   * --state-disabled when stopped and incomplete.
+   */
+  --progress-active: #2f9dff;
+  --progress-complete: #3fb950;
+
+  /* ---- Status ---- */
+  --status-error: #e0705a;      /* tracker error, destructive items, near-full volume */
+  --status-warn: #c9a86a;       /* timed-out tracker, archive label */
+
+  /* ---- Label palette (default; YAML-configurable in later epics) ---- */
+  --label-iso: #f59e0b;
+  --label-archive: #c9a86a;
+  --label-kernel: #22d3ee;
+  --label-apps: #a78bfa;
+  --label-media: #e0705a;
+
+  /* ---- Typography ---- */
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --fs-stat-value: 22px;        /* 600, line-height 1.1 */
+  --fs-section-title: 14px;     /* 600 — Settings section titles */
+  --fs-app-name: 13px;          /* 600, letter-spacing 0.04em — wordmark, modal title */
+  --fs-cell: 12.5px;            /* 400 — table cells, sidebar items */
+  --fs-control: 12px;           /* 400 — buttons, inputs, tabs, detail cells */
+  --fs-detail: 11.5px;          /* 400 — detail facts, tracker rows */
+  --fs-header: 11px;            /* 500, uppercase, letter-spacing 0.05em — column headers */
+  --fs-meta: 11px;              /* 400 — status bar, hints */
+  --fs-chip: 10.5px;            /* 400 — label/priority chips */
+  --fs-caption: 10px;           /* 400, uppercase, letter-spacing 0.10–0.14em — captions */
+  --fs-progress-label: 9.5px;   /* 400, letter-spacing 0.02em — inline % on bars */
+
+  /* ---- Fixed heights (dense — keep these) ---- */
+  --h-topbar: 44px;
+  --h-toolbar: 36px;
+  --h-table-header: 28px;
+  --h-table-row: 30px;
+  --h-detail-tabs: 32px;
+  --h-detail-header: 24px;
+  --h-detail-file-row: 26px;
+  --h-peer-header: 26px;
+  --h-peer-row: 27px;
+  --h-statusbar: 26px;
+  --h-sidebar-item: 26px;
+  --h-button: 26px;             /* buttons 24–28 by context */
+  --h-input: 28px;
+  --h-menu-item: 26px;
+
+  /* ---- Spacing steps in use ---- */
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 10px;
+  --sp-5: 12px;
+  --sp-6: 14px;
+  --sp-7: 16px;
+  --sp-8: 18px;
+  --sp-9: 20px;
+
+  /* ---- Radii ---- */
+  --r-chip: 2px;                /* chips, progress bars, dots-as-squares */
+  --r-control: 3px;             /* buttons, inputs, menu items */
+  --r-card: 4px;                /* cards, dropzone, popovers */
+  --r-window: 6px;              /* app window, large panels */
+
+  /* ---- Shadows ---- */
+  --shadow-window: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --shadow-menu: 0 18px 40px rgba(0, 0, 0, 0.6);
+
+  /* ---- Motion ---- */
+  --t-progress: 300ms linear;   /* progress-bar width transitions */
+  --t-row-fade: 120ms;          /* row insert/remove fade */
+}

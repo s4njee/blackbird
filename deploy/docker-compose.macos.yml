@@ -1,0 +1,28 @@
+# Docker Desktop for Mac requires each bind-mount parent to be shared in
+# Docker Desktop → Settings → Resources → File sharing. Named volumes from
+# the default Compose file avoid that requirement and usually perform better
+# for rTorrent's session and piece I/O than host bind mounts.
+services:
+  rtorrent:
+    volumes:
+      - type: bind
+        source: ${BLACKBIRD_MAC_DOWNLOAD_DIR:-./data/downloads}
+        target: /downloads
+      - type: bind
+        source: ${BLACKBIRD_MAC_WATCH_DIR:-./data/watch}
+        target: /data/watch
+      - type: bind
+        source: ${BLACKBIRD_MAC_SESSION_DIR:-./data/session}
+        target: /data/session
+
+  blackbird:
+    volumes:
+      - type: bind
+        source: ${BLACKBIRD_MAC_CONFIG_DIR:-./data/config}
+        target: /config
+      - type: bind
+        source: ${BLACKBIRD_MAC_DOWNLOAD_DIR:-./data/downloads}
+        target: /downloads
+      - type: bind
+        source: ${BLACKBIRD_MAC_WATCH_DIR:-./data/watch}
+        target: /watch

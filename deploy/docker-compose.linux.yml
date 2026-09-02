@@ -1,0 +1,25 @@
+services:
+  rtorrent:
+    user: "${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - type: bind
+        source: ${BLACKBIRD_DOWNLOAD_DIR:-./data/downloads}
+        target: /downloads
+      - type: bind
+        source: ${BLACKBIRD_WATCH_DIR:-./data/watch}
+        target: /data/watch
+      - type: bind
+        source: ${RTORRENT_SESSION_DIR:-./data/session}
+        target: /data/session
+
+  blackbird:
+    volumes:
+      - type: bind
+        source: ${BLACKBIRD_CONFIG_DIR:-./data/config}
+        target: /config
+      - type: bind
+        source: ${BLACKBIRD_DOWNLOAD_DIR:-./data/downloads}
+        target: /downloads
+      - type: bind
+        source: ${BLACKBIRD_WATCH_DIR:-./data/watch}
+        target: /watch

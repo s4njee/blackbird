@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #0b0c0d; font-family: "IBM Plex Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #f59e0b; text-decoration: none; }
+  a:hover { color: #f8c777; }
+</style>
+</helmet>
+
+<section style="display:flex; flex-direction:column; gap:48px; padding:56px; background:#0b0c0d; color:#d6d9dd">
+
+  <div style="display:flex; flex-direction:column; gap:6px">
+    <div style="font-size:13px; letter-spacing:0.14em; text-transform:uppercase; color:#7c828a">Turn 1</div>
+    <div style="font-size:26px; font-weight:600; color:#e8eaed">rTorrent web console — dense pro layout</div>
+    <div style="font-size:14px; color:#7c828a">Frames: <a href="#1a">1a</a> main · <a href="#1b">1b</a> detail tabs · <a href="#1c">1c</a> add torrent · <a href="#1d">1d</a> settings · <a href="#1e">1e</a> disk &amp; stats</div>
+  </div>
+
+  <!-- ===== 1a MAIN ===== -->
+  <div id="1a" data-screen-label="1a Main" style="display:flex; flex-direction:column; gap:12px">
+    <div style="display:flex; align-items:baseline; gap:12px">
+      <span style="font-size:12px; font-weight:600; padding:3px 8px; border-radius:3px; background:#f59e0b; color:#0b0c0d">1a</span>
+      <span style="font-size:15px; font-weight:500; color:#e8eaed">Main — list, sidebar, detail, context menu</span>
+    </div>
+
+    <div style="width:1600px; border:1px solid #26292e; border-radius:6px; overflow:hidden; background:#101214; display:flex; flex-direction:column; box-shadow:0 24px 60px rgba(0,0,0,0.5)">
+
+      <!-- top bar -->
+      <div style="height:44px; flex:none; display:flex; align-items:center; gap:16px; padding:0 12px; background:#15181b; border-bottom:1px solid #26292e">
+        <div style="display:flex; align-items:center; gap:8px">
+          <div style="width:16px; height:16px; border:2px solid #f59e0b; border-radius:2px"></div>
+          <span style="font-size:13px; font-weight:600; letter-spacing:0.04em; color:#e8eaed">rTorrent</span>
+        </div>
+        <div style="width:1px; height:22px; background:#26292e"></div>
+        <div style="display:flex; align-items:center; gap:18px; font-size:12px; color:#9aa0a7">
+          <span style="display:flex; align-items:center; gap:6px"><span style="color:#f59e0b">▼</span> 41.2 <span style="color:#6b7178">MB/s</span></span>
+          <span style="display:flex; align-items:center; gap:6px"><span style="color:#22d3ee">▲</span> 12.8 <span style="color:#6b7178">MB/s</span></span>
+        </div>
+        <div style="width:170px; height:26px; border:1px solid #26292e; border-radius:3px; background:#0e1012; padding:2px">
+          <svg viewBox="0 0 340 44" preserveAspectRatio="none" style="width:100%; height:100%; display:block">
+            <polyline points="{{ dlPoints }}" fill="none" stroke="#f59e0b" stroke-width="2"></polyline>
+            <polyline points="{{ ulPoints }}" fill="none" stroke="#22d3ee" stroke-width="2"></polyline>
+          </svg>
+        </div>
+        <div style="flex:1"></div>
+        <div style="display:flex; align-items:center; gap:8px; height:26px; padding:0 10px; border:1px solid #26292e; border-radius:3px; background:#0e1012; width:240px">
+          <span style="color:#5d6369; font-size:12px">⌕</span>
+          <span style="font-size:12px; color:#5d6369">Filter torrents…</span>
+        </div>
+        <div style="display:flex; gap:6px">
+          <div style="height:26px; display:flex; align-items:center; padding:0 12px; border-radius:3px; background:#f59e0b; color:#0b0c0d; font-size:12px; font-weight:600">+ Add torrent</div>
+          <div style="height:26px; width:28px; display:flex; align-items:center; justify-content:center; border:1px solid #26292e; border-radius:3px; color:#9aa0a7; font-size:13px">⚙</div>
+        </div>
+      </div>
+
+      <!-- action toolbar -->
+      <div style="height:36px; flex:none; display:flex; align-items:center; gap:4px; padding:0 10px; background:#121417; border-bottom:1px solid #26292e">
+        <sc-for list="{{ toolbarPrimary }}" as="b" hint-placeholder-count="3">
+          <div style="height:24px; display:flex; align-items:center; gap:6px; padding:0 9px; border:1px solid #2c3035; border-radius:3px; background:#1b1f23; font-size:12px; color:#d6d9dd">
+            <span style="color:#f59e0b; font-size:10px">{{ b.icon }}</span>{{ b.label }}
+          </div>
+        </sc-for>
+        <div style="width:1px; height:18px; background:#26292e; margin:0 6px"></div>
+        <sc-for list="{{ toolbarSecondary }}" as="b" hint-placeholder-count="4">
+          <div style="height:24px; display:flex; align-items:center; padding:0 9px; border:1px solid #2c3035; border-radius:3px; background:#1b1f23; font-size:12px; color:#d6d9dd">{{ b.label }}</div>
+        </sc-for>
+        <div style="flex:1"></div>
+        <div style="font-size:11px; color:#6b7178; font-variant-numeric:tabular-nums">3 selected · 14 of 412 shown</div>
+      </div>
+
+      <div style="display:flex; align-items:stretch; height:760px">
+
+        <!-- sidebar -->
+        <div style="width:196px; flex:none; background:#0e1012; border-right:1px solid #26292e; display:flex; flex-direction:column; padding:10px 0; overflow:hidden">
+          <div style="padding:0 12px 6px; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#5d6369">Status</div>
+          <sc-for list="{{ statusFilters }}" as="f" hint-placeholder-count="5">
+            <div style="height:26px; display:flex; align-items:center; gap:8px; padding:0 12px; font-size:12.5px; color:#b6bbc1; background:{{ f.bg }}; border-left:2px solid {{ f.mark }}">
+              <span style="flex:1">{{ f.label }}</span>
+              <span style="font-size:11px; color:#6b7178; font-variant-numeric:tabular-nums">{{ f.count }}</span>
+            </div>
+          </sc-for>
+          <div style="height:1px; background:#26292e; margin:10px 12px"></div>
+          <div style="padding:0 12px 6px; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#5d6369">Labels</div>
+          <sc-for list="{{ labels }}" as="l" hint-placeholder-count="6">
+            <div style="height:26px; display:flex; align-items:center; gap:8px; padding:0 12px; font-size:12.5px; color:#b6bbc1">
+              <span style="width:7px; height:7px; border-radius:2px; background:{{ l.color }}"></span>
+              <span style="flex:1">{{ l.label }}</span>
+              <span style="font-size:11px; color:#6b7178; font-variant-numeric:tabular-nums">{{ l.count }}</span>
+            </div>
+          </sc-for>
+          <div style="height:1px; background:#26292e; margin:10px 12px"></div>
+          <div style="padding:0 12px 6px; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:#5d6369">Trackers</div>
+          <sc-for list="{{ trackerFilters }}" as="t" hint-placeholder-count="4">
+            <div style="height:26px; display:flex; align-items:center; gap:8px; padding:0 12px; font-size:12.5px; color:#b6bbc1">
+              <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ t.label }}</span>
+              <span style="font-size:11px; color:#6b7178; font-variant-numeric:tabular-nums">{{ t.count }}</span>
+            </div>
+          </sc-for>
+          <div style="flex:1"></div>
+          <div style="padding:10px 12px 0; border-top:1px solid #26292e; display:flex; flex-direction:column; gap:6px">
+            <div style="display:flex; justify-content:space-between; font-size:11px; color:#7c828a; font-variant-numeric:tabular-nums"><span>/mnt/data</span><span>3.1 / 8.0 TB</span></div>
+            <div style="height:4px; border-radius:2px; background:#1f2328; overflow:hidden"><div style="width:39%; height:100%; background:#f59e0b"></div></div>
+          </div>
+        </div>
+
+        <!-- main column -->
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column; position:relative">
+
+          <!-- table -->
+          <div style="flex:1; min-height:0; overflow:hidden">
+            <table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:12.5px; font-variant-numeric:tabular-nums">
+              <colgroup>
+                <col style="width:26px"><col><col style="width:74px"><col style="width:112px"><col style="width:96px"><col style="width:66px"><col style="width:78px"><col style="width:78px"><col style="width:64px"><col style="width:54px"><col style="width:88px"><col style="width:86px"><col style="width:120px">
+              </colgroup>
+              <thead>
+                <tr style="background:#15181b">
+                  <th style="height:28px; border-bottom:1px solid #26292e; border-right:1px solid #1c1f23"></th>
+                  <sc-for list="{{ columns }}" as="c" hint-placeholder-count="12">
+                    <th style="height:28px; padding:0 8px; text-align:{{ c.align }}; font-weight:500; font-size:11px; letter-spacing:0.05em; text-transform:uppercase; color:{{ c.color }}; border-bottom:1px solid #26292e; border-right:1px solid #1c1f23; white-space:nowrap">{{ c.label }}</th>
+                  </sc-for>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ torrents }}" as="t" hint-placeholder-count="14">
+                  <tr style="background:{{ t.rowBg }}; height:30px">
+                    <td style="border-bottom:1px solid #191c20; text-align:center">
+                      <span style="display:inline-block; width:11px; height:11px; border:1px solid {{ t.boxBorder }}; border-radius:2px; background:{{ t.boxFill }}"></span>
+                    </td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e0e3e6">{{ t.name }}</td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; text-align:right; color:#9aa0a7">{{ t.size }}</td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px">
+                      <div style="height:12px; border-radius:2px; background:#1e2226; overflow:hidden; position:relative">
+                        <div style="height:100%; width:{{ t.pct }}%; background:{{ t.barColor }}"></div>
+                        <span style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:9.5px; color:#e8eaed; letter-spacing:0.02em">{{ t.pctLabel }}</span>
+                      </div>
+                    </td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; color:{{ t.statusColor }}; white-space:nowrap">{{ t.status }}</td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; text-align:right; color:#9aa0a7">{{ t.peers }}</td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; text-align:right; color:{{ t.dlColor }}">{{ t.down }}</td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; text-align:right; color:{{ t.ulColor }}">{{ t.up }}</td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; text-align:right; color:#9aa0a7">{{ t.eta }}</td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; text-align:right; color:{{ t.ratioColor }}">{{ t.ratio }}</td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px">
+                      <span style="display:inline-flex; align-items:center; height:16px; padding:0 6px; border-radius:2px; font-size:10.5px; color:{{ t.labelColor }}; background:{{ t.labelBg }}; white-space:nowrap">{{ t.label }}</span>
+                    </td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; text-align:right; color:#6b7178">{{ t.added }}</td>
+                    <td style="border-bottom:1px solid #191c20; padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#6b7178">{{ t.tracker }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- context menu -->
+          <div style="position:absolute; top:184px; left:300px; width:196px; background:#1a1e22; border:1px solid #33383e; border-radius:4px; padding:4px; box-shadow:0 18px 40px rgba(0,0,0,0.6); z-index:5">
+            <sc-for list="{{ contextMenu }}" as="m" hint-placeholder-count="8">
+              <div style="height:{{ m.h }}px; display:flex; align-items:center; gap:8px; padding:0 8px; margin:{{ m.margin }}; background:{{ m.bg }}; border-radius:3px; font-size:12px; color:{{ m.color }}">
+                <span style="flex:1">{{ m.label }}</span>
+                <span style="font-size:11px; color:#5d6369">{{ m.hint }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <!-- detail panel -->
+          <div style="height:288px; flex:none; border-top:1px solid #26292e; background:#0e1012; display:flex; flex-direction:column">
+            <div style="height:32px; flex:none; display:flex; align-items:stretch; background:#15181b; border-bottom:1px solid #26292e">
+              <sc-for list="{{ detailTabs }}" as="tab" hint-placeholder-count="5">
+                <div style="display:flex; align-items:center; padding:0 14px; font-size:12px; color:{{ tab.color }}; background:{{ tab.bg }}; border-bottom:2px solid {{ tab.mark }}; border-right:1px solid #1c1f23">{{ tab.label }}</div>
+              </sc-for>
+              <div style="flex:1; border-bottom:2px solid transparent"></div>
+              <div style="display:flex; align-items:center; padding:0 12px; font-size:11.5px; color:#7c828a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:420px">debian-13.1.0-amd64-DVD-1.iso</div>
+            </div>
+
+            <div style="flex:1; min-height:0; display:flex">
+              <div style="flex:1; min-width:0; overflow:hidden">
+                <table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:12px; font-variant-numeric:tabular-nums">
+                  <colgroup><col><col style="width:80px"><col style="width:110px"><col style="width:70px"><col style="width:120px"></colgroup>
+                  <thead>
+                    <tr>
+                      <sc-for list="{{ fileColumns }}" as="c" hint-placeholder-count="5">
+                        <th style="height:24px; padding:0 8px; text-align:{{ c.align }}; font-weight:500; font-size:10.5px; letter-spacing:0.05em; text-transform:uppercase; color:#5d6369; border-bottom:1px solid #26292e; white-space:nowrap">{{ c.label }}</th>
+                      </sc-for>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <sc-for list="{{ files }}" as="f" hint-placeholder-count="8">
+                      <tr style="height:26px">
+                        <td style="border-bottom:1px solid #17191c; padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#d6d9dd">
+                          <span style="display:inline-block; padding-left:{{ f.indent }}px; color:{{ f.nameColor }}">{{ f.icon }} {{ f.name }}</span>
+                        </td>
+                        <td style="border-bottom:1px solid #17191c; padding:0 8px; text-align:right; color:#9aa0a7">{{ f.size }}</td>
+                        <td style="border-bottom:1px solid #17191c; padding:0 8px">
+                          <div style="height:10px; border-radius:2px; background:#1e2226; overflow:hidden"><div style="height:100%; width:{{ f.pct }}%; background:{{ f.barColor }}"></div></div>
+                        </td>
+                        <td style="border-bottom:1px solid #17191c; padding:0 8px; text-align:right; color:#9aa0a7">{{ f.pctLabel }}</td>
+                        <td style="border-bottom:1px solid #17191c; padding:0 8px">
+                          <span style="display:inline-flex; align-items:center; height:16px; padding:0 7px; border-radius:2px; font-size:10.5px; color:{{ f.prioColor }}; background:{{ f.prioBg }}">{{ f.priority }}</span>
+                        </td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+              <div style="width:300px; flex:none; border-left:1px solid #26292e; padding:10px 12px; display:flex; flex-direction:column; gap:7px">
+                <sc-for list="{{ detailFacts }}" as="d" hint-placeholder-count="9">
+                  <div style="display:flex; justify-content:space-between; gap:10px; font-size:11.5px">
+                    <span style="color:#6b7178">{{ d.k }}</span>
+                    <span style="color:{{ d.color }}; font-variant-numeric:tabular-nums; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ d.v }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <!-- status bar -->
+          <div style="height:26px; flex:none; display:flex; align-items:center; gap:18px; padding:0 12px; background:#15181b; border-top:1px solid #26292e; font-size:11px; color:#7c828a; font-variant-numeric:tabular-nums">
+            <span style="display:flex; align-items:center; gap:6px"><span style="width:6px; height:6px; border-radius:50%; background:#f59e0b"></span>rtorrent 0.15.4 / libtorrent 0.14.4</span>
+            <span>412 torrents · 289 seeding · 11 downloading</span>
+            <span>DHT 1,204 nodes</span>
+            <span>Port 51413 open</span>
+            <div style="flex:1"></div>
+            <span>Session ratio 2.41</span>
+            <span>Uptime 41d 06h</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 1b DETAIL TABS ===== -->
+  <div id="1b" data-screen-label="1b Detail tabs" style="display:flex; flex-direction:column; gap:12px">
+    <div style="display:flex; align-items:baseline; gap:12px">
+      <span style="font-size:12px; font-weight:600; padding:3px 8px; border-radius:3px; background:#f59e0b; color:#0b0c0d">1b</span>
+      <span style="font-size:15px; font-weight:500; color:#e8eaed">Detail panel — peers and trackers</span>
+    </div>
+    <div style="display:flex; gap:20px">
+      <div style="width:840px; border:1px solid #26292e; border-radius:6px; background:#0e1012; overflow:hidden">
+        <div style="height:30px; display:flex; align-items:center; padding:0 12px; background:#15181b; border-bottom:1px solid #26292e; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#9aa0a7">Peers — 34 connected</div>
+        <table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:12px; font-variant-numeric:tabular-nums">
+          <colgroup><col style="width:130px"><col style="width:66px"><col><col style="width:110px"><col style="width:78px"><col style="width:78px"><col style="width:70px"></colgroup>
+          <thead>
+            <tr>
+              <sc-for list="{{ peerColumns }}" as="c" hint-placeholder-count="7">
+                <th style="height:26px; padding:0 10px; text-align:{{ c.align }}; font-weight:500; font-size:10.5px; letter-spacing:0.05em; text-transform:uppercase; color:#5d6369; border-bottom:1px solid #26292e; white-space:nowrap">{{ c.label }}</th>
+              </sc-for>
+            </tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ peers }}" as="p" hint-placeholder-count="10">
+              <tr style="height:27px">
+                <td style="border-bottom:1px solid #17191c; padding:0 10px; color:#d6d9dd">{{ p.ip }}</td>
+                <td style="border-bottom:1px solid #17191c; padding:0 10px; text-align:right; color:#6b7178">{{ p.port }}</td>
+                <td style="border-bottom:1px solid #17191c; padding:0 10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#9aa0a7">{{ p.client }}</td>
+                <td style="border-bottom:1px solid #17191c; padding:0 10px">
+                  <div style="height:9px; border-radius:2px; background:#1e2226; overflow:hidden"><div style="height:100%; width:{{ p.pct }}%; background:#22d3ee"></div></div>
+                </td>
+                <td style="border-bottom:1px solid #17191c; padding:0 10px; text-align:right; color:{{ p.dlColor }}">{{ p.down }}</td>
+                <td style="border-bottom:1px solid #17191c; padding:0 10px; text-align:right; color:{{ p.ulColor }}">{{ p.up }}</td>
+                <td style="border-bottom:1px solid #17191c; padding:0 10px; text-align:right; color:#6b7178">{{ p.flags }}</td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="width:720px; border:1px solid #26292e; border-radius:6px; background:#0e1012; overflow:hidden">
+        <div style="height:30px; display:flex; align-items:center; padding:0 12px; background:#15181b; border-bottom:1px solid #26292e; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#9aa0a7">Trackers</div>
+        <div style="display:flex; flex-direction:column">
+          <sc-for list="{{ trackers }}" as="tr" hint-placeholder-count="5">
+            <div style="display:flex; align-items:center; gap:12px; padding:9px 12px; border-bottom:1px solid #17191c">
+              <span style="width:6px; height:6px; border-radius:50%; background:{{ tr.dot }}; flex:none"></span>
+              <span style="flex:1; min-width:0; font-size:12px; color:#d6d9dd; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ tr.url }}</span>
+              <span style="font-size:11px; color:{{ tr.statusColor }}; width:120px; text-align:right">{{ tr.status }}</span>
+              <span style="font-size:11px; color:#6b7178; width:96px; text-align:right; font-variant-numeric:tabular-nums">{{ tr.seeds }}</span>
+              <span style="font-size:11px; color:#6b7178; width:86px; text-align:right; font-variant-numeric:tabular-nums">{{ tr.next }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex; gap:6px; padding:10px 12px">
+          <div style="height:24px; display:flex; align-items:center; padding:0 10px; border:1px solid #2c3035; border-radius:3px; background:#1b1f23; font-size:12px; color:#d6d9dd">Add tracker</div>
+          <div style="height:24px; display:flex; align-items:center; padding:0 10px; border:1px solid #2c3035; border-radius:3px; background:#1b1f23; font-size:12px; color:#d6d9dd">Force reannounce</div>
+          <div style="height:24px; display:flex; align-items:center; padding:0 10px; border:1px solid #2c3035; border-radius:3px; background:#1b1f23; font-size:12px; color:#d97757">Remove</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 1c ADD TORRENT ===== -->
+  <div id="1c" data-screen-label="1c Add torrent" style="display:flex; flex-direction:column; gap:12px">
+    <div style="display:flex; align-items:baseline; gap:12px">
+      <span style="font-size:12px; font-weight:600; padding:3px 8px; border-radius:3px; background:#f59e0b; color:#0b0c0d">1c</span>
+      <span style="font-size:15px; font-weight:500; color:#e8eaed">Add torrent — magnet or file</span>
+    </div>
+    <div style="width:660px; border:1px solid #33383e; border-radius:6px; background:#15181b; box-shadow:0 24px 60px rgba(0,0,0,0.6); overflow:hidden">
+      <div style="height:38px; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border-bottom:1px solid #26292e">
+        <span style="font-size:13px; font-weight:600; color:#e8eaed">Add torrent</span>
+        <span style="font-size:14px; color:#6b7178">✕</span>
+      </div>
+      <div style="padding:16px 14px; display:flex; flex-direction:column; gap:14px">
+        <div style="display:flex; gap:0; border:1px solid #2c3035; border-radius:3px; overflow:hidden; width:fit-content">
+          <div style="padding:5px 14px; font-size:12px; background:#1f2429; color:#e8eaed">Magnet / URL</div>
+          <div style="padding:5px 14px; font-size:12px; color:#8b9199; border-left:1px solid #2c3035">.torrent file</div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px">
+          <div style="font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#6b7178">Magnet links — one per line</div>
+          <div style="height:78px; border:1px solid #2c3035; border-radius:3px; background:#0e1012; padding:8px 10px; font-size:12px; color:#9aa0a7; line-height:1.6; overflow:hidden">magnet:?xt=urn:btih:8f4a2c1d9e7b3f60a5c8d2e1&amp;dn=ubuntu-26.04-desktop-amd64.iso<br><span style="color:#5d6369">magnet:?xt=urn:btih:…</span></div>
+        </div>
+        <div style="border:1px dashed #33383e; border-radius:4px; padding:18px; display:flex; flex-direction:column; align-items:center; gap:4px; background:#101214">
+          <div style="font-size:12.5px; color:#b6bbc1">Drop .torrent files here</div>
+          <div style="font-size:11px; color:#5d6369">or click to browse</div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+          <div style="display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#6b7178">Destination</div>
+            <div style="height:28px; display:flex; align-items:center; padding:0 10px; border:1px solid #2c3035; border-radius:3px; background:#0e1012; font-size:12px; color:#d6d9dd">/mnt/data/downloads</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:6px">
+            <div style="font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#6b7178">Label</div>
+            <div style="height:28px; display:flex; align-items:center; justify-content:space-between; padding:0 10px; border:1px solid #2c3035; border-radius:3px; background:#0e1012; font-size:12px; color:#d6d9dd"><span>iso</span><span style="color:#5d6369; font-size:10px">▼</span></div>
+          </div>
+        </div>
+        <div style="display:flex; gap:20px">
+          <sc-for list="{{ addOptions }}" as="o" hint-placeholder-count="3">
+            <div style="display:flex; align-items:center; gap:7px; font-size:12px; color:#b6bbc1">
+              <span style="width:12px; height:12px; border:1px solid {{ o.border }}; border-radius:2px; background:{{ o.fill }}"></span>{{ o.label }}
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; padding:12px 14px; border-top:1px solid #26292e; background:#121417">
+        <div style="height:28px; display:flex; align-items:center; padding:0 14px; border:1px solid #2c3035; border-radius:3px; font-size:12px; color:#b6bbc1">Cancel</div>
+        <div style="height:28px; display:flex; align-items:center; padding:0 16px; border-radius:3px; background:#f59e0b; font-size:12px; font-weight:600; color:#0b0c0d">Add</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 1d SETTINGS ===== -->
+  <div id="1d" data-screen-label="1d Settings" style="display:flex; flex-direction:column; gap:12px">
+    <div style="display:flex; align-items:baseline; gap:12px">
+      <span style="font-size:12px; font-weight:600; padding:3px 8px; border-radius:3px; background:#f59e0b; color:#0b0c0d">1d</span>
+      <span style="font-size:15px; font-weight:500; color:#e8eaed">Settings</span>
+    </div>
+    <div style="width:1000px; height:552px; border:1px solid #26292e; border-radius:6px; background:#101214; display:flex; overflow:hidden">
+      <div style="width:180px; flex:none; background:#0e1012; border-right:1px solid #26292e; padding:10px 0">
+        <sc-for list="{{ settingsNav }}" as="s" hint-placeholder-count="7">
+          <div style="height:28px; display:flex; align-items:center; padding:0 14px; font-size:12.5px; color:{{ s.color }}; background:{{ s.bg }}; border-left:2px solid {{ s.mark }}">{{ s.label }}</div>
+        </sc-for>
+      </div>
+      <div style="flex:1; min-width:0; padding:18px 20px; display:flex; flex-direction:column; gap:18px; overflow:hidden">
+        <div style="font-size:14px; font-weight:600; color:#e8eaed">Connection &amp; bandwidth</div>
+        <sc-for list="{{ settingsRows }}" as="r" hint-placeholder-count="8">
+          <div style="display:grid; grid-template-columns:230px 1fr; gap:16px; align-items:center">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <span style="font-size:12.5px; color:#d6d9dd">{{ r.label }}</span>
+              <span style="font-size:11px; color:#6b7178">{{ r.hint }}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px">
+              <div style="height:26px; min-width:{{ r.w }}px; display:flex; align-items:center; padding:0 10px; border:1px solid #2c3035; border-radius:3px; background:#0e1012; font-size:12px; color:#e8eaed; font-variant-numeric:tabular-nums">{{ r.value }}</div>
+              <span style="font-size:11px; color:#6b7178">{{ r.unit }}</span>
+            </div>
+          </div>
+        </sc-for>
+        <div style="flex:1"></div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid #26292e">
+          <div style="height:28px; display:flex; align-items:center; padding:0 14px; border:1px solid #2c3035; border-radius:3px; font-size:12px; color:#b6bbc1">Revert</div>
+          <div style="height:28px; display:flex; align-items:center; padding:0 16px; border-radius:3px; background:#f59e0b; font-size:12px; font-weight:600; color:#0b0c0d">Save</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 1e DISK & STATS ===== -->
+  <div id="1e" data-screen-label="1e Disk and stats" style="display:flex; flex-direction:column; gap:12px">
+    <div style="display:flex; align-items:baseline; gap:12px">
+      <span style="font-size:12px; font-weight:600; padding:3px 8px; border-radius:3px; background:#f59e0b; color:#0b0c0d">1e</span>
+      <span style="font-size:15px; font-weight:500; color:#e8eaed">Disk &amp; global stats</span>
+    </div>
+    <div style="width:1240px; display:flex; flex-direction:column; gap:16px; border:1px solid #26292e; border-radius:6px; background:#101214; padding:18px">
+
+      <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:12px">
+        <sc-for list="{{ statCards }}" as="s" hint-placeholder-count="5">
+          <div style="border:1px solid #26292e; border-radius:4px; background:#15181b; padding:12px; display:flex; flex-direction:column; gap:5px">
+            <div style="font-size:10.5px; letter-spacing:0.1em; text-transform:uppercase; color:#6b7178">{{ s.label }}</div>
+            <div style="font-size:22px; font-weight:600; color:{{ s.color }}; font-variant-numeric:tabular-nums; line-height:1.1">{{ s.value }}</div>
+            <div style="font-size:11px; color:#6b7178">{{ s.sub }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="border:1px solid #26292e; border-radius:4px; background:#0e1012; padding:12px; display:flex; flex-direction:column; gap:10px">
+        <div style="display:flex; align-items:center; gap:16px">
+          <span style="font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#9aa0a7">Throughput — last 60 min</span>
+          <span style="font-size:11px; color:#f59e0b">▼ download</span>
+          <span style="font-size:11px; color:#22d3ee">▲ upload</span>
+          <div style="flex:1"></div>
+          <span style="font-size:11px; color:#6b7178; font-variant-numeric:tabular-nums">peak 78.4 MB/s</span>
+        </div>
+        <svg viewBox="0 0 1180 220" preserveAspectRatio="none" style="width:100%; height:200px; display:block">
+          <line x1="0" y1="55" x2="1180" y2="55" stroke="#1e2226" stroke-width="1"></line>
+          <line x1="0" y1="110" x2="1180" y2="110" stroke="#1e2226" stroke-width="1"></line>
+          <line x1="0" y1="165" x2="1180" y2="165" stroke="#1e2226" stroke-width="1"></line>
+          <polygon points="{{ bigDlArea }}" fill="rgba(245,158,11,0.12)"></polygon>
+          <polyline points="{{ bigDlPoints }}" fill="none" stroke="#f59e0b" stroke-width="2"></polyline>
+          <polyline points="{{ bigUlPoints }}" fill="none" stroke="#22d3ee" stroke-width="2"></polyline>
+        </svg>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px">
+        <div style="border:1px solid #26292e; border-radius:4px; background:#0e1012; padding:12px; display:flex; flex-direction:column; gap:12px">
+          <div style="font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#9aa0a7">Volumes</div>
+          <sc-for list="{{ volumes }}" as="v" hint-placeholder-count="3">
+            <div style="display:flex; flex-direction:column; gap:6px">
+              <div style="display:flex; justify-content:space-between; font-size:12px; font-variant-numeric:tabular-nums">
+                <span style="color:#d6d9dd">{{ v.path }}</span>
+                <span style="color:#7c828a">{{ v.detail }}</span>
+              </div>
+              <div style="height:8px; border-radius:2px; background:#1e2226; overflow:hidden; display:flex">
+                <div style="width:{{ v.pct }}%; height:100%; background:{{ v.color }}"></div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="border:1px solid #26292e; border-radius:4px; background:#0e1012; padding:12px; display:flex; flex-direction:column; gap:9px">
+          <div style="font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#9aa0a7">Space by label</div>
+          <sc-for list="{{ labelUsage }}" as="l" hint-placeholder-count="6">
+            <div style="display:flex; align-items:center; gap:10px; font-size:12px">
+              <span style="width:7px; height:7px; border-radius:2px; background:{{ l.color }}; flex:none"></span>
+              <span style="width:96px; color:#d6d9dd">{{ l.label }}</span>
+              <span style="flex:1; height:6px; border-radius:2px; background:#1e2226; overflow:hidden; display:block"><span style="display:block; width:{{ l.pct }}%; height:100%; background:{{ l.color }}"></span></span>
+              <span style="width:76px; text-align:right; color:#7c828a; font-variant-numeric:tabular-nums">{{ l.size }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#f59e0b&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#f59e0b&quot;,&quot;#e5484d&quot;,&quot;#2f9dff&quot;,&quot;#3fb950&quot;]}}">
+class Component extends DCLogic {
+  poly(seed, n, w, h, amp, base) {
+    let v = base, out = [];
+    for (let i = 0; i < n; i++) {
+      const r = Math.sin((i + seed) * 1.7) * 0.5 + Math.sin((i + seed) * 0.43) * 0.5;
+      v = Math.max(0.05, Math.min(1, v + r * amp));
+      out.push(((i / (n - 1)) * w).toFixed(1) + "," + ((1 - v) * h).toFixed(1));
+    }
+    return out.join(" ");
+  }
+
+  renderVals() {
+    const accent = this.props.accent ?? "#f59e0b";
+    const up = "#22d3ee";
+    const sel = "rgba(245,158,11,0.09)";
+
+    const T = (name, size, pct, status, peers, down, upS, eta, ratio, label, added, tracker, opts) => {
+      const o = opts || {};
+      const done = pct >= 100;
+      return {
+        name, size, pct, pctLabel: done ? "100%" : pct.toFixed(1) + "%",
+        status, peers, down, up: upS, eta, ratio, label, added, tracker,
+        rowBg: o.sel ? sel : (o.alt ? "#121417" : "#101214"),
+        boxBorder: o.sel ? accent : "#3a3f45",
+        boxFill: o.sel ? accent : "transparent",
+        barColor: o.stopped && !done ? "#4b5158" : (done ? "#3fb950" : "#2f9dff"),
+        statusColor: o.err ? "#e0705a" : (o.stopped ? "#7c828a" : (done ? "#8b9199" : accent)),
+        dlColor: down === "—" ? "#4b5158" : accent,
+        ulColor: upS === "—" ? "#4b5158" : up,
+        ratioColor: parseFloat(ratio) >= 2 ? "#9aa0a7" : "#7c828a",
+        labelColor: o.labelColor || "#9aa0a7",
+        labelBg: o.labelBg || "#1e2226"
+      };
+    };
+    const iso = { labelColor: "#f8c777", labelBg: "rgba(245,158,11,0.12)" };
+    const lin = { labelColor: "#8ae4ef", labelBg: "rgba(34,211,238,0.12)" };
+    const arc = { labelColor: "#c9a86a", labelBg: "rgba(217,175,106,0.12)" };
+
+    return {
+      columns: [
+        { label: "Name", align: "left", color: "#c3c8ce" },
+        { label: "Size", align: "right", color: "#8b9199" },
+        { label: "Done", align: "left", color: "#8b9199" },
+        { label: "Status", align: "left", color: "#8b9199" },
+        { label: "Seeds/Peers", align: "right", color: "#8b9199" },
+        { label: "Down", align: "right", color: "#8b9199" },
+        { label: "Up", align: "right", color: "#8b9199" },
+        { label: "ETA", align: "right", color: "#8b9199" },
+        { label: "Ratio", align: "right", color: "#8b9199" },
+        { label: "Label", align: "left", color: "#8b9199" },
+        { label: "Added", align: "right", color: "#8b9199" },
+        { label: "Tracker", align: "left", color: "#8b9199" }
+      ],
+      torrents: [
+        T("debian-13.1.0-amd64-DVD-1.iso", "3.74 GB", 61.4, "Downloading", "38 / 112", "12.4 MB/s", "1.1 MB/s", "4m 12s", "0.18", "iso", "12:04 today", "bittorrent.debian.org", Object.assign({ sel: true }, iso)),
+        T("ubuntu-26.04-desktop-amd64.iso", "5.12 GB", 24.8, "Downloading", "51 / 204", "18.9 MB/s", "740 kB/s", "3m 48s", "0.06", "iso", "12:01 today", "torrent.ubuntu.com", Object.assign({ sel: true, alt: true }, iso)),
+        T("archlinux-2026.09.01-x86_64.iso", "1.28 GB", 100, "Seeding", "— / 44", "—", "6.2 MB/s", "—", "8.41", "iso", "Aug 30", "tracker.archlinux.org", Object.assign({ sel: true }, iso)),
+        T("linux-6.14.9.tar.xz", "148 MB", 100, "Seeding", "— / 9", "—", "1.8 MB/s", "—", "24.60", "kernel", "Aug 28", "linuxtracker.org", Object.assign({ alt: true }, lin)),
+        T("fedora-Workstation-Live-44-1.4.iso", "2.41 GB", 88.2, "Downloading", "22 / 61", "6.1 MB/s", "420 kB/s", "1m 04s", "0.31", "iso", "11:52 today", "torrent.fedoraproject.org", iso),
+        T("NASA-Apollo-17-scans-4K", "212 GB", 3.1, "Downloading", "4 / 7", "1.2 MB/s", "—", "2d 04h", "0.00", "archive", "Aug 31", "academictorrents.com", { alt: true }),
+        T("openSUSE-Tumbleweed-DVD-x86_64.iso", "4.60 GB", 100, "Seeding", "— / 18", "—", "2.9 MB/s", "—", "3.02", "iso", "Aug 24", "opensuse.org", iso),
+        T("gutenberg-mirror-2026-08.tar", "44.8 GB", 100, "Seeding", "— / 3", "—", "310 kB/s", "—", "1.14", "archive", "Aug 19", "academictorrents.com", { alt: true }),
+        T("alpine-standard-3.24.0-x86_64.iso", "224 MB", 100, "Stopped", "— / 0", "—", "—", "—", "5.77", "iso", "Aug 14", "alpinelinux.org", Object.assign({ stopped: true }, iso)),
+        T("proxmox-ve_9.1-1.iso", "1.42 GB", 47.0, "Queued", "0 / 26", "—", "—", "—", "0.00", "iso", "10:31 today", "proxmox.com", { alt: true, stopped: true }),
+        T("wikipedia-en-all-2026-07.zim", "108 GB", 100, "Seeding", "— / 12", "—", "4.4 MB/s", "—", "2.08", "archive", "Jul 30", "kiwix.org", {}),
+        T("manjaro-kde-26.0-260815.iso", "3.90 GB", 12.6, "Tracker error", "0 / 0", "—", "—", "∞", "0.00", "iso", "09:14 today", "manjaro.org", Object.assign({ alt: true, err: true }, arc)),
+        T("centos-stream-11-x86_64-dvd1.iso", "9.10 GB", 100, "Seeding", "— / 7", "—", "1.2 MB/s", "—", "0.94", "iso", "Jul 22", "centos.org", iso),
+        T("blender-4.9-linux-x64.tar.xz", "382 MB", 100, "Checking 42%", "— / 0", "—", "—", "—", "0.00", "apps", "Jul 11", "download.blender.org", { alt: true, stopped: true })
+      ],
+      statusFilters: [
+        { label: "All", count: "412", bg: "transparent", mark: "transparent" },
+        { label: "Downloading", count: "11", bg: "rgba(245,158,11,0.09)", mark: accent },
+        { label: "Seeding", count: "289", bg: "transparent", mark: "transparent" },
+        { label: "Stopped", count: "96", bg: "transparent", mark: "transparent" },
+        { label: "Checking", count: "2", bg: "transparent", mark: "transparent" },
+        { label: "Errored", count: "14", bg: "transparent", mark: "transparent" }
+      ],
+      labels: [
+        { label: "iso", count: "184", color: accent },
+        { label: "archive", count: "62", color: "#c9a86a" },
+        { label: "kernel", count: "38", color: up },
+        { label: "apps", count: "71", color: "#a78bfa" },
+        { label: "media", count: "44", color: "#e0705a" },
+        { label: "unlabeled", count: "13", color: "#4b5158" }
+      ],
+      trackerFilters: [
+        { label: "academictorrents.com", count: "88" },
+        { label: "torrent.ubuntu.com", count: "41" },
+        { label: "bittorrent.debian.org", count: "36" },
+        { label: "linuxtracker.org", count: "29" },
+        { label: "kiwix.org", count: "12" }
+      ],
+      toolbarPrimary: [
+        { label: "Start", icon: "▶" },
+        { label: "Pause", icon: "❙❙" },
+        { label: "Stop", icon: "■" }
+      ],
+      toolbarSecondary: [
+        { label: "Force recheck" }, { label: "Set label" }, { label: "Move data" },
+        { label: "Priority ↑" }, { label: "Priority ↓" }, { label: "Remove" }
+      ],
+      contextMenu: [
+        { label: "Start", hint: "", h: 26, bg: "transparent", color: "#d6d9dd", margin: "0" },
+        { label: "Pause", hint: "", h: 26, bg: "transparent", color: "#d6d9dd", margin: "0" },
+        { label: "Stop", hint: "", h: 26, bg: "transparent", color: "#d6d9dd", margin: "0" },
+        { label: "", hint: "", h: 1, bg: "#2a2e33", color: "transparent", margin: "4px 6px" },
+        { label: "Force recheck", hint: "", h: 26, bg: "transparent", color: "#d6d9dd", margin: "0" },
+        { label: "Set label", hint: "▸", h: 26, bg: "rgba(245,158,11,0.1)", color: "#e8eaed", margin: "0" },
+        { label: "Move data…", hint: "", h: 26, bg: "transparent", color: "#d6d9dd", margin: "0" },
+        { label: "Copy magnet link", hint: "", h: 26, bg: "transparent", color: "#d6d9dd", margin: "0" },
+        { label: "", hint: "", h: 1, bg: "#2a2e33", color: "transparent", margin: "4px 6px" },
+        { label: "Remove", hint: "Del", h: 26, bg: "transparent", color: "#d6d9dd", margin: "0" },
+        { label: "Remove + data", hint: "⇧Del", h: 26, bg: "transparent", color: "#e0705a", margin: "0" }
+      ],
+      detailTabs: [
+        { label: "Files", color: "#e8eaed", bg: "#0e1012", mark: accent },
+        { label: "Peers", color: "#8b9199", bg: "transparent", mark: "transparent" },
+        { label: "Trackers", color: "#8b9199", bg: "transparent", mark: "transparent" },
+        { label: "Transfer", color: "#8b9199", bg: "transparent", mark: "transparent" },
+        { label: "Pieces", color: "#8b9199", bg: "transparent", mark: "transparent" }
+      ],
+      fileColumns: [
+        { label: "File", align: "left" }, { label: "Size", align: "right" },
+        { label: "Progress", align: "left" }, { label: "Done", align: "right" },
+        { label: "Priority", align: "left" }
+      ],
+      files: [].concat([
+        { name: "debian-13.1.0-amd64-DVD-1", size: "3.74 GB", pct: 61, pctLabel: "61.4%", priority: "Normal", indent: 0, icon: "▾", nameColor: "#e8eaed", prioColor: "#9aa0a7", prioBg: "#1e2226" },
+        { name: "install", size: "2.98 GB", pct: 72, pctLabel: "72.0%", priority: "High", indent: 14, icon: "▾", nameColor: "#d6d9dd", prioColor: "#f8c777", prioBg: "rgba(245,158,11,0.12)" },
+        { name: "initrd.gz", size: "38.4 MB", pct: 100, pctLabel: "100%", priority: "High", indent: 28, icon: "·", nameColor: "#b6bbc1", prioColor: "#f8c777", prioBg: "rgba(245,158,11,0.12)" },
+        { name: "vmlinuz", size: "8.12 MB", pct: 100, pctLabel: "100%", priority: "High", indent: 28, icon: "·", nameColor: "#b6bbc1", prioColor: "#f8c777", prioBg: "rgba(245,158,11,0.12)" },
+        { name: "gtk/initrd.gz", size: "62.9 MB", pct: 84, pctLabel: "84.1%", priority: "Normal", indent: 28, icon: "·", nameColor: "#b6bbc1", prioColor: "#9aa0a7", prioBg: "#1e2226" },
+        { name: "pool", size: "674 MB", pct: 41, pctLabel: "41.2%", priority: "Normal", indent: 14, icon: "▸", nameColor: "#d6d9dd", prioColor: "#9aa0a7", prioBg: "#1e2226" },
+        { name: "dists", size: "48.1 MB", pct: 0, pctLabel: "0%", priority: "Skip", indent: 14, icon: "▸", nameColor: "#7c828a", prioColor: "#7c828a", prioBg: "#191c20" },
+        { name: "doc", size: "12.4 MB", pct: 0, pctLabel: "0%", priority: "Skip", indent: 14, icon: "▸", nameColor: "#7c828a", prioColor: "#7c828a", prioBg: "#191c20" },
+        { name: "README.txt", size: "4.1 kB", pct: 100, pctLabel: "100%", priority: "Normal", indent: 14, icon: "·", nameColor: "#b6bbc1", prioColor: "#9aa0a7", prioBg: "#1e2226" },
+        { name: "SHA256SUMS", size: "812 B", pct: 100, pctLabel: "100%", priority: "Normal", indent: 14, icon: "·", nameColor: "#b6bbc1", prioColor: "#9aa0a7", prioBg: "#1e2226" }
+      ]).map(f => Object.assign({ barColor: f.pct >= 100 ? "#3fb950" : "#2f9dff" }, f)),
+      detailFacts: [
+        { k: "Hash", v: "8F4A2C1D9E7B3F60A5C8", color: "#b6bbc1" },
+        { k: "Downloaded", v: "2.30 GB of 3.74 GB", color: "#d6d9dd" },
+        { k: "Uploaded", v: "418 MB", color: "#d6d9dd" },
+        { k: "Ratio", v: "0.18", color: "#d6d9dd" },
+        { k: "Pieces", v: "1,428 of 2,326 · 2 MB", color: "#d6d9dd" },
+        { k: "Peers", v: "38 seeds / 112 peers", color: "#d6d9dd" },
+        { k: "Down rate", v: "12.4 MB/s", color: accent },
+        { k: "Up rate", v: "1.1 MB/s", color: up },
+        { k: "Path", v: "/mnt/data/downloads/iso", color: "#b6bbc1" },
+        { k: "Added", v: "2026-09-01 12:04", color: "#b6bbc1" },
+        { k: "Private", v: "No", color: "#b6bbc1" }
+      ],
+      peerColumns: [
+        { label: "IP", align: "left" }, { label: "Port", align: "right" }, { label: "Client", align: "left" },
+        { label: "Have", align: "left" }, { label: "Down", align: "right" }, { label: "Up", align: "right" }, { label: "Flags", align: "right" }
+      ],
+      peers: [
+        { ip: "185.21.104.7", port: "51413", client: "rTorrent 0.15.4", pct: 100, down: "3.9 MB/s", up: "180 kB/s", flags: "EIX" },
+        { ip: "94.140.8.221", port: "6881", client: "qBittorrent 5.4.1", pct: 100, down: "2.8 MB/s", up: "240 kB/s", flags: "EX" },
+        { ip: "77.111.240.19", port: "49160", client: "Transmission 4.2.0", pct: 94, down: "1.6 MB/s", up: "96 kB/s", flags: "E" },
+        { ip: "51.15.62.240", port: "51413", client: "Deluge 2.3.1", pct: 71, down: "1.1 MB/s", up: "312 kB/s", flags: "EIU" },
+        { ip: "212.129.44.98", port: "6889", client: "libtorrent 2.0.11", pct: 63, down: "840 kB/s", up: "—", flags: "EU" },
+        { ip: "45.83.220.14", port: "8999", client: "BiglyBT 3.6.0", pct: 58, down: "620 kB/s", up: "44 kB/s", flags: "EH" },
+        { ip: "88.99.140.62", port: "51413", client: "rTorrent 0.14.0", pct: 44, down: "410 kB/s", up: "128 kB/s", flags: "EI" },
+        { ip: "159.69.12.180", port: "6881", client: "Unknown", pct: 22, down: "—", up: "72 kB/s", flags: "U" },
+        { ip: "37.187.99.201", port: "31337", client: "qBittorrent 5.3.2", pct: 18, down: "—", up: "310 kB/s", flags: "EU" },
+        { ip: "195.201.14.7", port: "6969", client: "Transmission 4.1.0", pct: 9, down: "—", up: "58 kB/s", flags: "EX" }
+      ].map(p => Object.assign(p, { dlColor: p.down === "—" ? "#4b5158" : accent, ulColor: p.up === "—" ? "#4b5158" : up })),
+      trackers: [
+        { url: "http://bttracker.debian.org:6969/announce", status: "Working", seeds: "38 S / 112 L", next: "in 12m", dot: accent, statusColor: "#f8c777" },
+        { url: "udp://tracker.opentrackr.org:1337/announce", status: "Working", seeds: "22 S / 61 L", next: "in 04m", dot: accent, statusColor: "#f8c777" },
+        { url: "udp://open.demonii.com:1337/announce", status: "Timed out", seeds: "—", next: "retry 02m", dot: "#c9a86a", statusColor: "#c9a86a" },
+        { url: "[DHT]", status: "Enabled", seeds: "1,204 nodes", next: "in 09m", dot: "#22d3ee", statusColor: "#8ae4ef" },
+        { url: "[Peer exchange]", status: "Enabled", seeds: "44 peers", next: "—", dot: "#22d3ee", statusColor: "#8ae4ef" }
+      ],
+      addOptions: [
+        { label: "Start immediately", border: accent, fill: accent },
+        { label: "Skip hash check", border: "#3a3f45", fill: "transparent" },
+        { label: "Sequential download", border: "#3a3f45", fill: "transparent" }
+      ],
+      settingsNav: [
+        { label: "General", color: "#b6bbc1", bg: "transparent", mark: "transparent" },
+        { label: "Connection", color: "#e8eaed", bg: "rgba(245,158,11,0.09)", mark: accent },
+        { label: "Bandwidth", color: "#b6bbc1", bg: "transparent", mark: "transparent" },
+        { label: "Queue", color: "#b6bbc1", bg: "transparent", mark: "transparent" },
+        { label: "Directories", color: "#b6bbc1", bg: "transparent", mark: "transparent" },
+        { label: "Labels", color: "#b6bbc1", bg: "transparent", mark: "transparent" },
+        { label: "Interface", color: "#b6bbc1", bg: "transparent", mark: "transparent" },
+        { label: "Advanced (.rtorrent.rc)", color: "#b6bbc1", bg: "transparent", mark: "transparent" }
+      ],
+      settingsRows: [
+        { label: "Listening port", hint: "network.port_range", value: "51413", unit: "TCP + uTP", w: 100 },
+        { label: "Global download limit", hint: "throttle.global_down.max_rate", value: "0", unit: "KB/s · 0 = unlimited", w: 100 },
+        { label: "Global upload limit", hint: "throttle.global_up.max_rate", value: "20480", unit: "KB/s", w: 100 },
+        { label: "Max peers per torrent", hint: "throttle.max_peers.normal", value: "200", unit: "", w: 100 },
+        { label: "Max uploads per torrent", hint: "throttle.max_uploads", value: "12", unit: "", w: 100 },
+        { label: "Encryption", hint: "protocol.encryption.set", value: "Require outgoing, allow incoming", unit: "", w: 300 },
+        { label: "DHT", hint: "dht.mode.set", value: "Auto — off for private torrents", unit: "", w: 300 },
+        { label: "Peer exchange", hint: "protocol.pex.set", value: "Enabled", unit: "", w: 300 }
+      ],
+      statCards: [
+        { label: "Download", value: "41.2 MB/s", sub: "11 active", color: accent },
+        { label: "Upload", value: "12.8 MB/s", sub: "289 seeding", color: up },
+        { label: "Session ratio", value: "2.41", sub: "18.4 TB up / 7.6 TB down", color: "#e8eaed" },
+        { label: "Torrents", value: "412", sub: "96 stopped · 14 errored", color: "#e8eaed" },
+        { label: "Disk free", value: "4.9 TB", sub: "of 8.0 TB across 3 volumes", color: "#e8eaed" }
+      ],
+      volumes: [
+        { path: "/mnt/data", detail: "3.1 TB used of 8.0 TB", pct: 39, color: accent },
+        { path: "/mnt/archive", detail: "11.2 TB used of 12.0 TB", pct: 93, color: "#e0705a" },
+        { path: "/mnt/scratch", detail: "480 GB used of 2.0 TB", pct: 24, color: up }
+      ],
+      labelUsage: [
+        { label: "archive", pct: 100, size: "9.84 TB", color: "#c9a86a" },
+        { label: "iso", pct: 42, size: "4.10 TB", color: accent },
+        { label: "media", pct: 28, size: "2.71 TB", color: "#e0705a" },
+        { label: "apps", pct: 11, size: "1.08 TB", color: "#a78bfa" },
+        { label: "kernel", pct: 4, size: "402 GB", color: up },
+        { label: "unlabeled", pct: 2, size: "188 GB", color: "#4b5158" }
+      ],
+      dlPoints: this.poly(0, 40, 340, 44, 0.22, 0.6),
+      ulPoints: this.poly(9, 40, 340, 44, 0.14, 0.3),
+      bigDlPoints: this.poly(3, 90, 1180, 220, 0.16, 0.62),
+      bigDlArea: "0,220 " + this.poly(3, 90, 1180, 220, 0.16, 0.62) + " 1180,220",
+      bigUlPoints: this.poly(21, 90, 1180, 220, 0.12, 0.3)
+    };
+  }
+}
+</script>
+</body>
+</html>

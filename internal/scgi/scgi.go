@@ -1,0 +1,183 @@
+// Package scgi implements the SCGI transport (netstring header + body) used
+// to reach rtorrent directly over a unix socket or TCP, replacing the
+// nginx/Apache scgi_pass proxy.
+package scgi
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"strconv"
+	"strings"
+	"time"
+
+	"blackbird/internal/scgi/xmlrpc"
+)
+
+// Endpoint is a resolved SCGI dial target.
+type Endpoint struct {
+	Network string // "unix" or "tcp"
+	Address string
+}
+
+// ParseEndpoint accepts "unix:///path/to/socket", "tcp://host:port", or a
+// bare absolute path (treated as a unix socket).
+func ParseEndpoint(s string) (Endpoint, error) {
+	switch {
+	case strings.HasPrefix(s, "unix://"):
+		addr := strings.TrimPrefix(s, "unix://")
+		if addr == "" {
+			return Endpoint{}, fmt.Errorf("scgi: empty unix socket path in %q", s)
+		}
+		return Endpoint{Network: "unix", Address: addr}, nil
+	case strings.HasPrefix(s, "tcp://"):
+		addr := strings.TrimPrefix(s, "tcp://")
+		if addr == "" {
+			return Endpoint{}, fmt.Errorf("scgi: empty tcp address in %q", s)
+		}
+		return Endpoint{Network: "tcp", Address: addr}, nil
+	case strings.HasPrefix(s, "/"):
+		return Endpoint{Network: "unix", Address: s}, nil
+	default:
+		return Endpoint{}, fmt.Errorf("scgi: endpoint must be unix:// or tcp:// (got %q)", s)
+	}
+}
+
+// Client issues one SCGI request per connection (rtorrent's SCGI server
+// closes the connection after each response). Calls are concurrent-safe:
+// each request dials independently, bounded by a connection semaphore.
+type Client struct {
+	Endpoint Endpoint
+	// Timeout bounds a single call (dial + write + read) when the context
+	// carries no earlier deadline.
+	Timeout  time.Duration
+	maxConns chan struct{}
+}
+
+// DefaultMaxConcurrentCalls bounds concurrent SCGI connections.
+const DefaultMaxConcurrentCalls = 8
+
+// New parses endpoint (unix:// or tcp://) and returns a client.
+func New(endpoint string, timeout time.Duration) (*Client, error) {
+	ep, err := ParseEndpoint(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	return &Client{
+		Endpoint: ep,
+		Timeout:  timeout,
+		maxConns: make(chan struct{}, DefaultMaxConcurrentCalls),
+	}, nil
+}
+
+// Call sends one XML-RPC request and returns the response params. Daemon
+// faults surface as *xmlrpc.Fault; connection problems as plain transport
+// errors, distinguishable via errors.As.
+func (c *Client) Call(ctx context.Context, method string, params []xmlrpc.Value) ([]xmlrpc.Value, error) {
+	resp, err := c.roundTrip(ctx, xmlrpc.EncodeRequest(method, params))
+	if err != nil {
+		return nil, err // transport error (never a Fault)
+	}
+	return xmlrpc.DecodeResponse(resp)
+}
+
+func (c *Client) roundTrip(ctx context.Context, body []byte) ([]byte, error) {
+	select {
+	case c.maxConns <- struct{}{}:
+		defer func() { <-c.maxConns }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	dialer := &net.Dialer{Timeout: c.Timeout}
+	conn, err := dialer.DialContext(ctx, c.Endpoint.Network, c.Endpoint.Address)
+	if err != nil {
+		return nil, fmt.Errorf("scgi: dial %s://%s: %w", c.Endpoint.Network, c.Endpoint.Address, err)
+	}
+	defer conn.Close()
+
+	deadline := time.Now().Add(c.Timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	_ = conn.SetDeadline(deadline)
+
+	if _, err := conn.Write(Frame(body)); err != nil {
+		return nil, fmt.Errorf("scgi: write: %w", err)
+	}
+
+	resp, err := io.ReadAll(conn)
+	if err != nil {
+		return nil, fmt.Errorf("scgi: read: %w", err)
+	}
+	return resp, nil
+}
+
+// Frame builds the SCGI wire format: a netstring-encoded header dict
+// (CONTENT_LENGTH + SCGI 1) followed by the raw body.
+func Frame(body []byte) []byte {
+	header := "CONTENT_LENGTH\x00" + strconv.Itoa(len(body)) + "\x00SCGI\x001\x00"
+	netstring := strconv.Itoa(len(header)) + ":" + header + ","
+	return append([]byte(netstring), body...)
+}
+
+// ParseFrame reads one SCGI request from r, returning the header dict and
+// body. Used by test fake servers.
+func ParseFrame(r io.Reader) (map[string]string, []byte, error) {
+	lenStr, err := readUntil(r, ':')
+	if err != nil {
+		return nil, nil, fmt.Errorf("scgi: bad netstring: %w", err)
+	}
+	hlen, err := strconv.Atoi(lenStr)
+	if err != nil || hlen <= 0 || hlen > 1<<20 {
+		return nil, nil, fmt.Errorf("scgi: bad netstring length %q", lenStr)
+	}
+	headerBytes := make([]byte, hlen)
+	if _, err := io.ReadFull(r, headerBytes); err != nil {
+		return nil, nil, fmt.Errorf("scgi: short header: %w", err)
+	}
+	comma := make([]byte, 1)
+	if _, err := io.ReadFull(r, comma); err != nil || comma[0] != ',' {
+		return nil, nil, errors.New("scgi: netstring not terminated by comma")
+	}
+
+	headers := map[string]string{}
+	parts := strings.Split(string(headerBytes), "\x00")
+	if len(parts)%2 != 1 { // trailing NUL leaves an empty final part
+		return nil, nil, errors.New("scgi: malformed header dict")
+	}
+	for i := 0; i+1 < len(parts); i += 2 {
+		headers[parts[i]] = parts[i+1]
+	}
+	clen, err := strconv.Atoi(headers["CONTENT_LENGTH"])
+	if err != nil || clen < 0 {
+		return nil, nil, fmt.Errorf("scgi: bad CONTENT_LENGTH %q", headers["CONTENT_LENGTH"])
+	}
+	body := make([]byte, clen)
+	if _, err := io.ReadFull(r, body); err != nil {
+		return nil, nil, fmt.Errorf("scgi: short body: %w", err)
+	}
+	return headers, body, nil
+}
+
+func readUntil(r io.Reader, delim byte) (string, error) {
+	var b strings.Builder
+	buf := make([]byte, 1)
+	for {
+		if _, err := r.Read(buf); err != nil {
+			return "", err
+		}
+		if buf[0] == delim {
+			return b.String(), nil
+		}
+		b.WriteByte(buf[0])
+		if b.Len() > 24 {
+			return "", errors.New("scgi: netstring length prefix too long")
+		}
+	}
+}

@@ -1,0 +1,88 @@
+name: blackbird
+
+services:
+  rtorrent:
+    build:
+      context: .
+      dockerfile: deploy/docker/rtorrent/Dockerfile
+      args:
+        RTORRENT_VERSION: "${RTORRENT_VERSION:-0.16.18}"
+        LIBTORRENT_VERSION: "${LIBTORRENT_VERSION:-0.16.18}"
+    image: blackbird/rtorrent:${RTORRENT_VERSION:-0.16.18}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      # Fixed, host-published BitTorrent listen port. Override this value in
+      # deploy/.env (and forward it in your router/firewall) when needed.
+      RTORRENT_P2P_PORT: "${RTORRENT_P2P_PORT:-47111}"
+    restart: unless-stopped
+    networks: [blackbird, egress]
+    volumes:
+      # Keep completed and in-progress torrent data directly on the host.
+      # `${HOME}` resolves to the user running `docker compose`.
+      - type: bind
+        source: ${HOME}/Downloads/torrents
+        # This path must match Blackbird's mount: rTorrent stores absolute
+        # download paths in its session, and Blackbird passes destinations
+        # through unchanged.
+        target: /downloads
+      - rtorrent_watch:/data/watch
+      - rtorrent_session:/data/session
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/rtorrent-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 10
+    ports:
+      - "${RTORRENT_P2P_PORT:-47111}:${RTORRENT_P2P_PORT:-47111}/tcp"
+      - "${RTORRENT_P2P_PORT:-47111}:${RTORRENT_P2P_PORT:-47111}/udp"
+
+  blackbird:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: "${BLACKBIRD_VERSION:-dev}"
+        COMMIT: "${BLACKBIRD_COMMIT:-none}"
+        BUILD_DATE: "${BLACKBIRD_BUILD_DATE:-unknown}"
+    image: blackbird/blackbird:${BLACKBIRD_VERSION:-dev}
+    env_file:
+      - path: "${BLACKBIRD_ENV_FILE:-./deploy/.env}"
+        required: false
+        # Bcrypt hashes contain `$`; do not let Compose interpolate them.
+        format: raw
+    command: ["-config", "/config/config.yml"]
+    restart: unless-stopped
+    depends_on:
+      rtorrent:
+        condition: service_healthy
+        restart: true
+    networks: [blackbird, frontend]
+    ports:
+      # 8222 is commonly used by a local Blackbird binary; expose the
+      # Compose service on 8223 by default while keeping it overrideable.
+      - "${BLACKBIRD_HTTP_PORT:-8223}:8222"
+    volumes:
+      - blackbird_config:/config
+      # This must be the same host directory rTorrent uses above so
+      # Blackbird can browse and report on downloaded files.
+      - type: bind
+        source: ${HOME}/Downloads/torrents
+        target: /downloads
+      - rtorrent_watch:/watch
+
+networks:
+  # rTorrent and Blackbird share only this internal network for SCGI traffic.
+  blackbird:
+    internal: true
+  # rTorrent needs outbound tracker/peer connectivity, but this network has
+  # no published ports and is not shared with Blackbird or the host.
+  egress:
+  # Blackbird alone joins the HTTP-facing network so its published port works
+  # without making rTorrent's management endpoint reachable from the host.
+  frontend:
+
+volumes:
+  blackbird_config:
+  rtorrent_watch:
+  rtorrent_session:

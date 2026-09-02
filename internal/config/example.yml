@@ -1,0 +1,112 @@
+# Blackbird — annotated configuration reference.
+#
+# Every key below is optional; omitted keys fall back to the defaults shown.
+# NOTE: when settings are saved from the Settings UI (or reloaded), this file
+# is re-marshalled from the schema — comments in a managed block are NOT
+# preserved. Keep a copy if you annotate heavily.
+#
+# Reload tuning changes without restart: `kill -HUP <pid>` (file-watch may be
+# added later). SIGHUP re-applies changed `tuning:` values to the daemon.
+
+server:
+  # Address the HTTP server binds.
+  listen: ":8222"
+  # URL path prefix the app is served under.
+  base_url: "/"
+
+log:
+  # debug | info | warn | error (structured logs go to stderr)
+  level: info
+
+auth:
+  username: admin
+  # bcrypt hash of the password; enforcement lands with the API auth epic.
+  password_hash: ""
+
+rtorrent:
+  # SCGI endpoint of the daemon: unix:///path/to/socket or tcp://host:port
+  scgi: "unix:///tmp/rtorrent.sock"
+  # Per-call XML-RPC timeout.
+  timeout: 10s
+
+poll:
+  interval: 2s           # full torrent-list poll
+  detail_interval: 1s    # focused torrents: files/peers/trackers
+  volume_interval: 30s   # statfs refresh
+
+directories:
+  # Default destination for new torrents.
+  default: "/mnt/data/downloads"
+  # Per-label destination overrides, applied when a label is picked.
+  per_label:
+    iso: "/mnt/data/iso"
+    media: "/mnt/data/media"
+
+# Labels drive sidebar filter squares and table chips.
+labels:
+  - name: iso
+    color: "#f59e0b"
+  - name: kernel
+    color: "#22d3ee"
+  - name: apps
+    color: "#a78bfa"
+
+# Mount paths for the sidebar footer and stats volumes panel.
+volumes:
+  - /mnt/data
+
+ui:
+  # Accent color; default is deep blue-indigo (#35418f). Any #rrggbb is valid.
+  accent: "#35418f"
+  # Operator default table layout. Browser-local layouts take precedence.
+  # Omit this list to show all shipped columns at their handoff widths.
+  columns: []
+  sort:
+    column: added
+    dir: desc
+
+# rTorrent runtime tuning. Each key maps to the documented rtorrent command
+# (shown inline). Fields ABSENT here are left untouched on the daemon.
+# Applied on connect and re-applied for changed keys on SIGHUP.
+tuning:
+  # network.port_range — TCP/uTP listen port or range.
+  # port_range: "51413"
+  # network.port_random
+  # port_random: false
+  # protocol.encryption — none | comma-separated tokens:
+  #   allow_incoming, try_outgoing, require, require_RC4,
+  #   enable_retry, prefer_plaintext
+  # encryption: "none"
+  # dht.mode — auto | on | off | disable
+  # dht_mode: "auto"
+  # dht.port
+  # dht_port: 6881
+  # trackers.use_udp
+  # use_udp: true
+  # protocol.pex
+  # pex: true
+  # network.local_address — IP reported to trackers
+  # local_address: ""
+  # network.bind_address
+  # bind_address: ""
+  # network.http.max_open — concurrent tracker HTTP requests
+  # http_max_open: 32
+  # network.max_open_sockets — global socket cap
+  # max_open_sockets: 1024
+  # network.max_open_files
+  # max_open_files: 1024
+  # throttle.min_peers.normal / throttle.max_peers.normal
+  # min_peers_normal: 50
+  # max_peers_normal: 200
+  # throttle.min_peers.seeded / throttle.max_peers.seeded
+  # min_peers_seeded: 10
+  # max_peers_seeded: 100
+  # throttle.max_uploads — per torrent
+  # max_uploads: 12
+  # throttle.max_uploads.global — active upload slots globally
+  # max_uploads_global: 64
+  # throttle.max_downloads.global — active downloads globally
+  # max_downloads_global: 32
+  # Global rate limits in KB/s; 0 = unlimited.
+  # global_down_rate_kb: 0
+  # global_up_rate_kb: 20480
