@@ -1,0 +1,6 @@
+# Taste
+
+## Workflow
+- Assigns work by referencing items in a tracked backlog document (e.g., "work on PAR2.4 from backlogv2", "how about PAR2.5 now", "lets work on PAR2.6", "then PAR2.7") and expects the agent to locate the story in the repo and implement it end-to-end (backend + frontend + tests + docs) rather than asking clarifying questions — technical unknowns encountered along the way are resolved by research/experiment, not by interrupting the user. Confidence: 0.9
+- When an implementation task is finished, expects the backlog to be updated "per convention": completed stories get a `Results:` block (and `Remaining:` for deferred items) appended after their acceptance criteria, mirroring how prior completed stories are marked — without pruning the delivery-order lists or rewriting baseline summary/gap rows. Confidence: 0.8
+- Treats items the agent deferred (listed in a final summary or a backlog `Remaining:` block) as the next work queue: later requests quote those items tersely (e.g., "surface the history retention settings and also mount rtorrent session to blackbird") and expect them shipped end-to-end — UI, backend, tests, and deploy plumbing (docker-compose variants, entrypoints, bootstrap) — not just acknowledged. Confidence: 0.6

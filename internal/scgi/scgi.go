@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -52,12 +53,51 @@ type Client struct {
 	Endpoint Endpoint
 	// Timeout bounds a single call (dial + write + read) when the context
 	// carries no earlier deadline.
-	Timeout  time.Duration
-	maxConns chan struct{}
+	Timeout time.Duration
+	// MaxResponseBytes caps one SCGI response (headers + payload); 0 means
+	// DefaultMaxResponseBytes. Exceeding it aborts the read and returns a
+	// *TooLargeError — memory stays bounded no matter what the daemon (or
+	// anything else on the socket) sends.
+	MaxResponseBytes int64
+	maxConns         chan struct{}
 }
 
 // DefaultMaxConcurrentCalls bounds concurrent SCGI connections.
 const DefaultMaxConcurrentCalls = 8
+
+// DefaultMaxResponseBytes caps one SCGI response unless the client sets
+// MaxResponseBytes. A 5,000-torrent list poll is single-digit megabytes, so
+// 64 MB leaves wide headroom while stopping unbounded reads (PERF-6.3).
+const DefaultMaxResponseBytes = 64 << 20
+
+// TooLargeError reports a response that exceeded the configured cap. The
+// poller treats it like any poll failure: disconnect, back off, reconnect.
+type TooLargeError struct {
+	Limit int64
+}
+
+func (e *TooLargeError) Error() string {
+	return fmt.Sprintf("scgi: response exceeded %d bytes", e.Limit)
+}
+
+// TimeoutError reports a call that exceeded its deadline (dial, write, or
+// read). It matches errors.Is(err, os.ErrDeadlineExceeded) and unwraps to
+// the underlying error; match *TimeoutError to distinguish timeouts from
+// other transport failures.
+type TimeoutError struct {
+	Op  string // dial | write | read
+	Err error
+}
+
+func (e *TimeoutError) Error() string { return e.Err.Error() }
+func (e *TimeoutError) Unwrap() error { return e.Err }
+
+// Is reports timeout errors as deadline-exceeded for errors.Is — matching
+// both os.ErrDeadlineExceeded and context.DeadlineExceeded — whatever the
+// underlying transport error shape.
+func (e *TimeoutError) Is(target error) bool {
+	return target == os.ErrDeadlineExceeded || target == context.DeadlineExceeded
+}
 
 // New parses endpoint (unix:// or tcp://) and returns a client.
 func New(endpoint string, timeout time.Duration) (*Client, error) {
@@ -97,7 +137,7 @@ func (c *Client) roundTrip(ctx context.Context, body []byte) ([]byte, error) {
 	dialer := &net.Dialer{Timeout: c.Timeout}
 	conn, err := dialer.DialContext(ctx, c.Endpoint.Network, c.Endpoint.Address)
 	if err != nil {
-		return nil, fmt.Errorf("scgi: dial %s://%s: %w", c.Endpoint.Network, c.Endpoint.Address, err)
+		return nil, timeoutOr(fmt.Errorf("scgi: dial %s://%s: %w", c.Endpoint.Network, c.Endpoint.Address, err), "dial", err)
 	}
 	defer conn.Close()
 
@@ -108,14 +148,53 @@ func (c *Client) roundTrip(ctx context.Context, body []byte) ([]byte, error) {
 	_ = conn.SetDeadline(deadline)
 
 	if _, err := conn.Write(Frame(body)); err != nil {
-		return nil, fmt.Errorf("scgi: write: %w", err)
+		return nil, timeoutOp("write", err)
 	}
 
-	resp, err := io.ReadAll(conn)
+	limit := c.MaxResponseBytes
+	if limit <= 0 {
+		limit = DefaultMaxResponseBytes
+	}
+	resp, err := io.ReadAll(io.LimitReader(conn, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("scgi: read: %w", err)
+		return nil, timeoutOp("read", err)
+	}
+	if int64(len(resp)) > limit {
+		return nil, &TooLargeError{Limit: limit}
 	}
 	return resp, nil
+}
+
+// timeoutOp reports timeout-shaped failures (missed deadline, expired
+// context) as *TimeoutError so callers can match them with errors.As;
+// anything else (refused dial, reset connection, caller cancellation)
+// keeps the plain "scgi: <op>: ..." message.
+func timeoutOp(op string, cause error) error {
+	wrapped := fmt.Errorf("scgi: %s: %w", op, cause)
+	if isTimeout(cause) {
+		return &TimeoutError{Op: op, Err: wrapped}
+	}
+	return wrapped
+}
+
+// timeoutOr is timeoutOp with a prebuilt message (for dial, which names the
+// endpoint). Only the classification differs, never the text.
+func timeoutOr(msg error, op string, cause error) error {
+	if isTimeout(cause) {
+		return &TimeoutError{Op: op, Err: msg}
+	}
+	return msg
+}
+
+func isTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var nerr net.Error
+	return errors.As(err, &nerr) && nerr.Timeout()
 }
 
 // Frame builds the SCGI wire format: a netstring-encoded header dict
@@ -154,8 +233,11 @@ func ParseFrame(r io.Reader) (map[string]string, []byte, error) {
 	for i := 0; i+1 < len(parts); i += 2 {
 		headers[parts[i]] = parts[i+1]
 	}
+	// Bound before allocating: an unbounded CONTENT_LENGTH makes the
+	// make() below panic with "makeslice: len out of range", which takes
+	// down whichever fake daemon is serving the frame.
 	clen, err := strconv.Atoi(headers["CONTENT_LENGTH"])
-	if err != nil || clen < 0 {
+	if err != nil || clen < 0 || clen > DefaultMaxResponseBytes {
 		return nil, nil, fmt.Errorf("scgi: bad CONTENT_LENGTH %q", headers["CONTENT_LENGTH"])
 	}
 	body := make([]byte, clen)

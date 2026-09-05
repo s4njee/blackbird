@@ -1,0 +1,24 @@
+/*
+ * App chrome (Epic 5.1): window frame, top bar, status bar, and the
+ * structural placeholders that reserve the design's fixed heights/widths.
+ * All colors/measurements come from the design tokens in tokens.css.
+ */
+
+/* ---- Window frame ---- */
+
+.app-window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+.settings-view {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-fainter);
+}

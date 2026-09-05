@@ -13,6 +13,20 @@ server:
   listen: ":8222"
   # URL path prefix the app is served under.
   base_url: "/"
+  # Extra browser origins allowed to make state-changing requests and open
+  # the WebSocket. The page's own origin is always allowed; list something
+  # here only when a genuinely different origin must drive the API, e.g.
+  # the Vite dev server: ["http://localhost:5173"]
+  trusted_origins: []
+  # CIDRs (or bare IPs) whose X-Forwarded-For header is believed when
+  # attributing a request to a client, e.g. ["127.0.0.1/32"] when a reverse
+  # proxy runs on the same host. Empty ignores the header entirely, so a
+  # client can never choose its own identity for failed-login accounting.
+  trusted_proxies: []
+  # Enable POST /api/settings/execute, the Advanced tab's raw XML-RPC
+  # escape hatch. It reaches the daemon's whole command surface, so it is
+  # opt-in; the execute* family stays blocked even when this is true.
+  allow_execute: false
 
 log:
   # debug | info | warn | error (structured logs go to stderr)
@@ -28,11 +42,100 @@ rtorrent:
   scgi: "unix:///tmp/rtorrent.sock"
   # Per-call XML-RPC timeout.
   timeout: 10s
+  # One SCGI response cap in bytes (0 = 64MB default). Breaching it aborts
+  # the read with a typed error and a reconnect (PERF-6.3).
+  # max_response_bytes: 0
 
 poll:
   interval: 2s           # full torrent-list poll
   detail_interval: 1s    # focused torrents: files/peers/trackers
   volume_interval: 30s   # statfs refresh
+  # Idle stretch cap (PERF-6.3): with no visible client connected the poll
+  # backs off toward this; the first active client snaps back to interval.
+  # 0 means the 30s default.
+  # max_interval: 30s
+
+# Tracker ramp. rTorrent's appliance config loads the session with every
+# tracker disabled so torrents can hash-check without announcing, and
+# Blackbird turns them back on after each daemon connection. It does this a
+# batch at a time on purpose: enabling a large session's trackers at once
+# makes every torrent announce simultaneously, and each in-flight announce
+# holds a file descriptor. When rTorrent runs out it aborts rather than
+# degrading ("Listener port accept() failed: Too many open files"), taking
+# the daemon down. The Compose service also raises nofile to 65536; the ramp
+# keeps a session from reaching whatever the limit happens to be.
+#
+# The defaults ramp ~2,600 trackers up over about three and a half minutes.
+#trackers:
+#  enable_on_connect: true  # false leaves announces off after connect
+#  ramp_batch: 25           # trackers enabled per step (0 = default 25)
+#  ramp_interval: 2s        # pause between steps (0 = default 2s)
+
+# External reachability probe (PAR-5.5): a user-initiated check asks this
+# service whether the rTorrent listening port is reachable from the outside.
+# The service must answer 200 + {"reachable": true|false} ("open" accepted
+# as an alias) for GET <url with {port} substituted>. Empty disables the
+# check; Blackbird never probes automatically. See deploy/README.md for a
+# self-hosted reference probe.
+#portcheck:
+#  url: "https://probe.example/check?port={port}"
+#  timeout: 10s          # one probe round trip
+
+# IP blocklist (PAR-5.6): a PeerGuardian P2P / eMule DAT list loaded into
+# rTorrent's ipv4_filter table on connect and on a refresh cadence. Set
+# exactly one of path (local file) or url (fetched to a <config>-ipfilter.dat
+# cache, then loaded). The path the daemon loads must be visible to rTorrent
+# as well as to Blackbird (which counts the rules for Settings). Empty (both
+# unset) disables the feature. Rule count, last load, and errors show under
+# Settings > Connection.
+#network:
+#  ipfilter:
+#    path: "/data/filters/ipfilter.dat"
+#    # url: "https://example.com/ipfilter.dat"  # plain or .gz
+#    # refresh_interval: 24h   # re-fetch + reload cadence (URL default 24h)
+
+# Bandwidth scheduler (PAR-4.3): named limit profiles painted onto a 7x24
+# grid of profile names, applied on the minute boundary and after reconnect.
+# Each day lists 24 hourly profiles (empty = leave the daemon alone).
+#schedule:
+#  timezone: "America/Chicago"   # empty = server local
+#  bandwidth:
+#    profiles:
+#      - name: day
+#        color: "#f59e0b"
+#        down_kb: 1000
+#        up_kb: 500
+#        throttles:
+#          - name: slow
+#            up_kb: 100
+#            down_kb: 200
+#      - name: night
+#        down_kb: 0               # 0 = unlimited
+#        up_kb: 0
+#    grid:
+#      mon: ["night", "night", "night", "night", "night", "night", "night", "night", "night", "day", "day", "day", "day", "day", "day", "day", "day", "night", "night", "night", "night", "night", "night", "night"]
+history:
+  # Durable flight recorder beside this config: 0 = 16 MiB; 1–128 MiB.
+  # Changing this byte bound requires restart. Retention follows action_log_retention.
+  # Recorder checkpoints/outcomes are independent of the legacy ring counts below.
+  recorder_bytes: 0
+  # Per-torrent Logger retention (PAR-2.5): bounds the Blackbird action log
+  # and the torrent's d.message history shown on the Logger tab.
+  action_log_entries: 200     # max entries kept per torrent (0 disables)
+  action_log_retention: 24h   # age window for action entries
+  message_entries: 200        # max d.message transitions kept per torrent
+  # Global History view retention (PAR-5.3): max events in the recency ring
+  # behind the History view and GET /api/history (0 = 5000-event default).
+  global_entries: 5000
+
+# Transfer history retention (PAR-5.2): bounds the persisted per-day and
+# per-hour down/up totals shown on the Stats page. Older buckets are dropped
+# and the file is compacted; 0 disables persistence (the live session is
+# still counted in memory). Absent means the 90-day default. History lives in
+# <config>-traffic.jsonl next to this file; retention also edits live from
+# Settings > History without a restart.
+#stats:
+#  traffic_days: 90
 
 directories:
   # Default destination for new torrents.
@@ -41,6 +144,28 @@ directories:
   per_label:
     iso: "/mnt/data/iso"
     media: "/mnt/data/media"
+  # Watch directories (PAR-3.1): .torrent files dropped into each path are
+  # loaded into rTorrent automatically, then renamed to <name>.loaded (or
+  # deleted with delete_after_load). Each entry's label/destination are
+  # applied on load; start defaults to true.
+  # The deprecated scalar form (watch: "/path") is still accepted and migrates
+  # to a single entry with a warning on load.
+  watch:
+    - path: "/mnt/data/watch"
+      # label: "iso"          # d.custom1.set on load
+      # destination: "/mnt/data/iso"  # d.directory.set on load
+      # start: true            # load.start vs load.normal
+      # delete_after_load: false
+      # poll_interval: 5s      # polling fallback cadence (network filesystems)
+  # rTorrent session directory. When mounted/readable, Blackbird reads each
+  # torrent's session .torrent here to backfill comment/created-by metadata on
+  # the General tab for torrents that predate Blackbird (PAR-2.5).
+  session: "/data/session"
+  # Optional URL template for the torrent context menu's "Open directory":
+  # the torrent's base path is URL-escaped and substituted for {path} (or
+  # appended when no placeholder is present), then opened in a new tab.
+  # Leave empty to make "Open directory" copy the path instead.
+  # open_url_template: "https://files.example.com/browse?path={path}"
 
 # Labels drive sidebar filter squares and table chips.
 labels:
@@ -51,13 +176,35 @@ labels:
   - name: apps
     color: "#a78bfa"
 
+# Ratio groups and seeding limits (PAR-4.2). Assigned torrents are evaluated
+# per poll cycle while seeding; the first met condition fires the group's
+# action once per torrent. Enforcement runs in Blackbird, not in daemon
+# schedules (see the user guide design note).
+#seeding:
+#  custom_slot: custom2
+#  groups:
+#    - name: archive
+#      min_ratio: 2.0
+#      max_seeding_time: 168h
+#      action: stop_and_set_label
+#      label: done
+#    - name: churn
+#      max_ratio: 5.0
+#      action: erase_with_data
+
 # Mount paths for the sidebar footer and stats volumes panel.
 volumes:
   - /mnt/data
 
 ui:
-  # Accent color; default is deep blue-indigo (#35418f). Any #rrggbb is valid.
-  accent: "#35418f"
+  # Accent override; empty (default) follows the active theme's accent.
+  # Any #rrggbb is valid. Applied at boot and previewed live from unsaved
+  # Settings drafts. Configs saved by older releases may carry an explicit
+  # "#35418f" (the old default); clear it to adopt per-theme accents.
+  accent: ""
+  # Operator default theme id: dark | light | midnight | contrast | classic | system.
+  # Empty means dark. Browsers with a saved choice ignore it.
+  theme: "dark"
   # Operator default table layout. Browser-local layouts take precedence.
   # Omit this list to show all shipped columns at their handoff widths.
   columns: []
@@ -69,7 +216,16 @@ ui:
     # Optional primary/secondary browser seed. column/dir above remains
     # compatible with existing configurations.
     keys: []
-
+  # Display preferences driving every formatter: date_format is local
+  # ("12:04 today" / "Sep 2") or iso ("2026-09-03 12:04" UTC); rate_format is
+  # binary (1024-based) or decimal (1000-based). Browser-local drafts preview
+  # live and revert on Revert or navigation away.
+  # date_format: local
+  # rate_format: binary
+  # DEPRECATED (POL-8.4) and ignored: ui.poll_interval never drove anything —
+  # the torrent list poll is server-driven (poll.interval). Kept readable so
+  # old configs load (with a startup warning); remove the key.
+  # poll_interval: 2s
 # rTorrent runtime tuning. Each key maps to the documented rtorrent command
 # (shown inline). Fields ABSENT here are left untouched on the daemon.
 # Applied on connect and re-applied for changed keys on SIGHUP.
@@ -115,3 +271,14 @@ tuning:
   # Global rate limits in KB/s; 0 = unlimited.
   # global_down_rate_kb: 0
   # global_up_rate_kb: 20480
+  # Named throttle channels (PAR-4.1) assignable per torrent from the
+  # toolbar and the Throttle context submenu. Each channel creates
+  # throttle.up/down limits in KB/s (0 = unlimited); removing a channel
+  # still referenced by torrents is refused until they are unassigned.
+  # throttles:
+  #   - name: slow
+  #     up_kb: 100
+  #     down_kb: 500
+  #   - name: seed
+  #     up_kb: 50
+  #     down_kb: 0

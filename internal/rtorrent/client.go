@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"blackbird/internal/geoip"
 	"blackbird/internal/scgi"
 	"blackbird/internal/scgi/xmlrpc"
 )
@@ -24,6 +25,13 @@ func New(endpoint string, timeout time.Duration) (*Client, error) {
 		return nil, err
 	}
 	return &Client{scgi: c}, nil
+}
+
+// SetMaxResponseBytes caps one SCGI response (0 = 64MB default,
+// scgi.DefaultMaxResponseBytes). Exceeding it aborts the read with a typed
+// error instead of growing memory without bound (PERF-6.3).
+func (c *Client) SetMaxResponseBytes(n int64) {
+	c.scgi.MaxResponseBytes = n
 }
 
 // ---- generic value helpers ----
@@ -214,7 +222,7 @@ func mapTorrent(v []xmlrpc.Value) Torrent {
 	}
 
 	sizeChunks := ival(get(22))
-	doneChunks := ival(get(23))
+	hashedChunks := ival(get(37))
 	if sizeChunks > 0 && t.SizeBytes <= 0 {
 		// Some daemons report size 0 until metadata resolves; fall back to
 		// chunk arithmetic is not possible without chunk size, keep 0.
@@ -241,6 +249,14 @@ func mapTorrent(v []xmlrpc.Value) Torrent {
 	var urls []string
 	if len(v) > 24 {
 		for _, u := range aval(get(24)) {
+			// A nested t.multicall returns one inner list per tracker
+			// (t.url= is its single column), which is what a real daemon
+			// sends; sval on that list yields "" and silently blanked the
+			// tracker for every torrent. Flat rows are still accepted.
+			if inner := aval(u); len(inner) > 0 {
+				urls = append(urls, sval(inner[0]))
+				continue
+			}
 			urls = append(urls, sval(u))
 		}
 	}
@@ -259,8 +275,10 @@ func mapTorrent(v []xmlrpc.Value) Torrent {
 		bval(get(20)),     // is_active
 	)
 	if t.State == StateChecking && sizeChunks > 0 {
-		// Best-effort checking progress from chunk completion.
-		t.CheckingPercent = clamp100(float64(doneChunks) / float64(sizeChunks) * 100)
+		// d.completed_chunks is the amount downloaded, not the amount
+		// verified. Use d.chunks_hashed so a recheck does not appear to make
+		// progress merely because the torrent was previously downloaded.
+		t.CheckingPercent = clamp100(float64(hashedChunks) / float64(sizeChunks) * 100)
 	}
 
 	if t.State == StateDownloading && t.DownRate > 0 && t.SizeBytes > t.CompletedBytes {
@@ -323,34 +341,101 @@ func trackerHost(urls []string) string {
 // ---- detail fetches ----
 
 const (
-	filesDetailCall    = "f.multicall=,f.path=,f.size_bytes=,f.completed_chunks=,f.size_chunks=,f.priority="
-	peersDetailCall    = "p.multicall=,p.id=,p.address=,p.port=,p.client_version=,p.completed_percent=,p.down_rate=,p.up_rate=,p.is_encrypted=,p.is_incoming=,p.is_snubbed="
+	filesDetailCall = "f.multicall=,f.path=,f.size_bytes=,f.completed_chunks=,f.size_chunks=,f.priority="
+	// p.down_total/p.up_total are the per-connection byte counters; p.is_snubbed
+	// drives the composed S flag and the snub/unsnub moderation toggle.
+	peersDetailCall    = "p.multicall=,p.id=,p.address=,p.port=,p.client_version=,p.completed_percent=,p.down_rate=,p.up_rate=,p.is_encrypted=,p.is_incoming=,p.is_snubbed=,p.down_total=,p.up_total="
 	trackersDetailCall = "t.multicall=,t.url=,t.is_enabled=,t.group=,t.scrape_complete=,t.scrape_incomplete=,t.success_time_next=,t.latest_event=,t.failed_counter=,t.success_counter=,t.latest_new_peers="
 )
 
-// detailRow evaluates the nested f./p./t.multicall commands in a download
-// context. Calling those methods directly does not select a download in
-// current rTorrent releases, so it quietly returns empty lists. d.multicall2
-// provides that context and lets us select the requested row by hash.
-func (c *Client) detailRow(ctx context.Context, hash string, calls ...string) ([]xmlrpc.Value, error) {
-	params := []xmlrpc.Value{str(""), str("main"), str("d.hash=")}
-	for _, call := range calls {
-		params = append(params, str(call))
-	}
-	res, err := c.scgi.Call(ctx, "d.multicall2", params)
-	if err != nil {
-		return nil, err
-	}
-	if len(res) == 0 {
-		return nil, fmt.Errorf("torrent %q not found", hash)
-	}
-	for _, raw := range aval(res[0]) {
-		row := aval(raw)
-		if len(row) > 0 && sval(row[0]) == hash {
-			return row, nil
+// multicallParams builds the arguments for a nested f./p./t.multicall: the
+// target hash, the empty pattern, and then ONE PARAMETER PER FIELD.
+//
+// rTorrent wants each field command as its own parameter. Passing them
+// comma-joined inside a single string parameter appears to work on some
+// builds but makes others — 0.15.x among them — treat the whole string as one
+// command and return only the first field of every row. That silently emptied
+// the detail drawer: files came back as paths with no sizes, trackers as URLs
+// with no counters.
+func multicallParams(hash, fields string) []xmlrpc.Value {
+	params := []xmlrpc.Value{str(hash), str("")}
+	for _, field := range strings.Split(fields, ",") {
+		if field = strings.TrimSpace(field); field != "" {
+			params = append(params, str(field))
 		}
 	}
-	return nil, fmt.Errorf("torrent %q not found", hash)
+	return params
+}
+
+// detailRow evaluates the f./p./t.multicall commands and d.* getters for one
+// torrent. The target hash is passed directly to every command. rTorrent
+// rejects p.multicall and t.multicall inside system.multicall on some builds,
+// so nested detail calls are made directly while scalar d.* getters are
+// batched. Using d.multicall2 here would scan the entire main view and, on
+// large sessions, can exceed rTorrent's response limits before the requested
+// row is found.
+func (c *Client) detailRow(ctx context.Context, hash string, calls ...string) ([]xmlrpc.Value, error) {
+	if len(calls) == 0 {
+		return []xmlrpc.Value{str(hash)}, nil
+	}
+	values := make([]xmlrpc.Value, len(calls))
+	reqs := make([]Request, 0, len(calls))
+	requestIndexes := make([]int, 0, len(calls))
+	for i, call := range calls {
+		switch {
+		case strings.HasPrefix(call, "f.multicall="):
+			res, err := c.scgi.Call(ctx, "f.multicall", multicallParams(hash, strings.TrimPrefix(call, "f.multicall=,")))
+			if err != nil {
+				return nil, fmt.Errorf("%s for torrent %q: %w", call, hash, err)
+			}
+			if len(res) == 0 {
+				return nil, fmt.Errorf("%s returned no values for torrent %q", call, hash)
+			}
+			values[i] = res[0]
+		case strings.HasPrefix(call, "p.multicall="):
+			res, err := c.scgi.Call(ctx, "p.multicall", multicallParams(hash, strings.TrimPrefix(call, "p.multicall=,")))
+			if err != nil {
+				return nil, fmt.Errorf("%s for torrent %q: %w", call, hash, err)
+			}
+			if len(res) == 0 {
+				return nil, fmt.Errorf("%s returned no values for torrent %q", call, hash)
+			}
+			values[i] = res[0]
+		case strings.HasPrefix(call, "t.multicall="):
+			res, err := c.scgi.Call(ctx, "t.multicall", multicallParams(hash, strings.TrimPrefix(call, "t.multicall=,")))
+			if err != nil {
+				return nil, fmt.Errorf("%s for torrent %q: %w", call, hash, err)
+			}
+			if len(res) == 0 {
+				return nil, fmt.Errorf("%s returned no values for torrent %q", call, hash)
+			}
+			values[i] = res[0]
+		default:
+			requestIndexes = append(requestIndexes, i)
+			reqs = append(reqs, Request{Method: strings.TrimSuffix(call, "="), Params: []xmlrpc.Value{str(hash)}})
+		}
+	}
+	if len(reqs) > 0 {
+		results, err := c.MultiCall(ctx, reqs)
+		if err != nil {
+			return nil, err
+		}
+		for j, result := range results {
+			i := requestIndexes[j]
+			if result.Err != nil {
+				return nil, fmt.Errorf("%s for torrent %q: %w", calls[i], hash, result.Err)
+			}
+			if len(result.Values) == 0 {
+				return nil, fmt.Errorf("%s returned no values for torrent %q", calls[i], hash)
+			}
+			values[i] = result.Values[0]
+		}
+	}
+	row := []xmlrpc.Value{str(hash)}
+	for _, value := range values {
+		row = append(row, value)
+	}
+	return row, nil
 }
 
 func nestedRows(row []xmlrpc.Value, index int) []xmlrpc.Value {
@@ -391,6 +476,9 @@ func (c *Client) Files(ctx context.Context, hash string) ([]File, error) {
 	return mapFiles(nestedRows(row, 1)), nil
 }
 
+// mapPeers normalizes peer rows and annotates each with a GeoIP country code
+// ("" when the database cannot resolve the address). Field order matches
+// peersDetailCall.
 func mapPeers(rows []xmlrpc.Value) []Peer {
 	out := make([]Peer, 0, len(rows))
 	for _, raw := range rows {
@@ -408,19 +496,26 @@ func mapPeers(rows []xmlrpc.Value) []Peer {
 		if bval(g(8)) {
 			flags.WriteByte('I')
 		}
-		if bval(g(9)) {
+		snubbed := bval(g(9))
+		if snubbed {
 			flags.WriteByte('S')
 		}
-		out = append(out, Peer{
+		address := sval(g(1))
+		peer := Peer{
 			ID:               sval(g(0)),
-			Address:          sval(g(1)),
+			Address:          address,
 			Port:             int(ival(g(2))),
 			Client:           sval(g(3)),
 			CompletedPercent: float64(ival(g(4))),
 			DownRate:         ival(g(5)),
 			UpRate:           ival(g(6)),
+			IsSnubbed:        snubbed,
+			DownloadedBytes:  ival(g(10)),
+			UploadedBytes:    ival(g(11)),
+			CountryCode:      geoip.Lookup(address),
 			Flags:            flags.String(),
-		})
+		}
+		out = append(out, peer)
 	}
 	return out
 }
@@ -471,12 +566,15 @@ func (c *Client) Trackers(ctx context.Context, hash string) ([]Tracker, error) {
 }
 
 // FetchDetail gathers files, peers, trackers and transfer facts for one
-// torrent in one download-scoped d.multicall2 round trip.
+// torrent using hash-scoped nested calls plus one system.multicall for the
+// scalar getters. The trailing
+// d.bitfield= column is captured into Detail.BitfieldHex (hex of the piece
+// bitfield); it is not part of the JSON detail payload (the WS layer diffs it).
 func (c *Client) FetchDetail(ctx context.Context, hash string) (Detail, error) {
 	d := Detail{Hash: hash}
 	row, err := c.detailRow(ctx, hash,
 		filesDetailCall, peersDetailCall, trackersDetailCall,
-		"d.down.total=", "d.up.total=", "d.chunk_size=", "d.size_chunks=", "d.completed_chunks=", "d.directory=",
+		"d.down.total=", "d.up.total=", "d.chunk_size=", "d.size_chunks=", "d.completed_chunks=", "d.directory=", "d.bitfield=",
 	)
 	if err != nil {
 		return d, err
@@ -502,6 +600,9 @@ func (c *Client) FetchDetail(ctx context.Context, hash string) (Detail, error) {
 			}
 			return xmlrpc.Value{}
 		}()),
+	}
+	if len(row) > 10 {
+		d.BitfieldHex = sval(row[10])
 	}
 	return d, nil
 }
@@ -559,6 +660,61 @@ func (c *Client) SetLabel(ctx context.Context, hash, label string) error {
 	return c.call(ctx, "d.custom1.set", hash, label)
 }
 
+// SetThrottleName assigns a torrent to a named throttle channel via
+// d.throttle_name.set. An empty name clears the assignment (the daemon falls
+// back to the global limits). Verified against rTorrent 0.16.18: the call
+// faults on an active download, so callers must stop the torrent first (see
+// the API layer's stop/set/start cycle).
+func (c *Client) SetThrottleName(ctx context.Context, hash, name string) error {
+	return c.call(ctx, "d.throttle_name.set", hash, name)
+}
+
+// SetThrottleUp creates or updates a named upload channel limit.
+// Verified against rTorrent 0.16.18: throttle.up takes an empty target, the
+// channel name, and the cap in KiB/s as a string (0 = unlimited).
+func (c *Client) SetThrottleUp(ctx context.Context, name string, kb int64) error {
+	return c.call(ctx, "throttle.up", "", name, strconv.FormatInt(kb, 10))
+}
+
+// SetThrottleDown creates or updates a named download channel limit (same
+// wire format as SetThrottleUp).
+func (c *Client) SetThrottleDown(ctx context.Context, name string, kb int64) error {
+	return c.call(ctx, "throttle.down", "", name, strconv.FormatInt(kb, 10))
+}
+
+// throttleInfo queries one throttle.*.max/rate value in bytes/s (-1 when the
+// channel is undefined; 0 when throttling is inactive or unlimited).
+func (c *Client) throttleInfo(ctx context.Context, method, name string) (int64, error) {
+	res, err := c.scgi.Call(ctx, method, []xmlrpc.Value{str(""), str(name)})
+	if err != nil {
+		return 0, err
+	}
+	if len(res) != 1 {
+		return 0, fmt.Errorf("%s returned %d values, want 1", method, len(res))
+	}
+	return res[0].Int, nil
+}
+
+// ThrottleUpMax returns a channel's upload cap in bytes/s.
+func (c *Client) ThrottleUpMax(ctx context.Context, name string) (int64, error) {
+	return c.throttleInfo(ctx, "throttle.up.max", name)
+}
+
+// ThrottleDownMax returns a channel's download cap in bytes/s.
+func (c *Client) ThrottleDownMax(ctx context.Context, name string) (int64, error) {
+	return c.throttleInfo(ctx, "throttle.down.max", name)
+}
+
+// ThrottleUpRate returns a channel's current upload throughput in bytes/s.
+func (c *Client) ThrottleUpRate(ctx context.Context, name string) (int64, error) {
+	return c.throttleInfo(ctx, "throttle.up.rate", name)
+}
+
+// ThrottleDownRate returns a channel's current download throughput in bytes/s.
+func (c *Client) ThrottleDownRate(ctx context.Context, name string) (int64, error) {
+	return c.throttleInfo(ctx, "throttle.down.rate", name)
+}
+
 // SetDirectory sets the torrent's download directory (move-data flow uses
 // this after the files are transferred).
 func (c *Client) SetDirectory(ctx context.Context, hash, path string) error {
@@ -568,6 +724,14 @@ func (c *Client) SetDirectory(ctx context.Context, hash, path string) error {
 // SetDefaultDirectory changes rTorrent's runtime default destination.
 func (c *Client) SetDefaultDirectory(ctx context.Context, path string) error {
 	return c.call(ctx, "directory.default.set", path)
+}
+
+// LoadIPFilter loads a local blocklist file into rTorrent's ipv4_filter
+// table as "unwanted" (PAR-5.6). The path is read by the daemon, so it must
+// be visible to rTorrent, not just to Blackbird. Wire form per the upstream
+// manual: ipv4_filter.load = <path>, <unwanted>.
+func (c *Client) LoadIPFilter(ctx context.Context, path string) error {
+	return c.call(ctx, "ipv4_filter.load", path, "unwanted")
 }
 
 // SetFilePriority sets one file's priority (0 skip, 1 normal, 2 high) using
@@ -632,6 +796,30 @@ func (c *Client) SetTrackerEnabled(ctx context.Context, hash string, trackerInde
 		val = "1"
 	}
 	return c.call(ctx, "t.is_enabled.set", fmt.Sprintf("%s:t%d", hash, trackerIndex), val)
+}
+
+// peerTarget builds the "hash:pPEERID" sub-target used by every p.* command.
+func peerTarget(hash, peerID string) string {
+	return fmt.Sprintf("%s:p%s", hash, peerID)
+}
+
+// BanPeer permanently bans a peer ("hash:pPEERID"). rTorrent cannot unban a
+// banned peer; only a daemon restart clears the ban list.
+func (c *Client) BanPeer(ctx context.Context, hash, peerID string) error {
+	return c.call(ctx, "p.banned.set", peerTarget(hash, peerID), "1")
+}
+
+// SetPeerSnubbed controls whether rTorrent stops uploading to a peer. The
+// daemon exposes p.snubbed.set (p.is_snubbed is a read alias); ruTorrent's
+// "snub" is the same command with 1, "unsnub" with 0.
+func (c *Client) SetPeerSnubbed(ctx context.Context, hash, peerID string, snubbed bool) error {
+	return c.call(ctx, "p.snubbed.set", peerTarget(hash, peerID), boolParam(snubbed))
+}
+
+// DisconnectPeer drops the connection to a peer immediately. The peer may
+// reconnect later; banning is required to keep it away.
+func (c *Client) DisconnectPeer(ctx context.Context, hash, peerID string) error {
+	return c.call(ctx, "p.disconnect", peerTarget(hash, peerID))
 }
 
 // AddOptions control the load.* variant used when adding torrents.

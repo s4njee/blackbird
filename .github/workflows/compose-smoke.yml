@@ -8,6 +8,108 @@ permissions:
   contents: read
 
 jobs:
+  frontend:
+    name: Frontend build and bundle budget
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Typecheck frontend
+        run: npm run typecheck
+      - name: Run frontend unit tests
+        run: npm run test:coverage
+      - name: Lint frontend
+        run: npm run lint
+      - name: Lint styles (no literals outside the palette)
+        run: npm run lint:css
+      - name: Check theme contrast (WCAG AA)
+        run: npm run check-contrast
+      - name: Check generated theme docs are current
+        run: npm run gen:theme-docs && git diff --exit-code ../docs/theme-tokens.md
+      - name: Check frontend formatting
+        run: npm run format:check
+      - name: Build frontend
+        run: npm run build
+      - name: Check bundle budget (entry 80 KB / total 120 KB gzip)
+        run: npm run size
+
+  go-checks:
+    name: Go vet, race detector, and staticcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Vet all packages
+        run: go vet ./...
+      - name: Unit tests with the race detector
+        run: go test -race ./...
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+      - name: Run staticcheck
+        run: $(go env GOPATH)/bin/staticcheck ./...
+
+  perf-guard:
+    name: Performance regression guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Isolated step (not folded into go test ./...): benchmark timing
+      # needs a quiet runner without parallel packages competing for CPU.
+      - name: Fail on >20% regression over baselines
+        run: make bench-guard
+
+  e2e:
+    name: Browser end-to-end (fakertorrent)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci --ignore-scripts
+      # The e2e server embeds web/dist, so the frontend builds first.
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run browser suite
+        working-directory: web
+        run: npm run e2e
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/test-results/
+          retention-days: 7
+
   compose-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -31,6 +133,23 @@ jobs:
         run: ./deploy/smoke-test.sh
       - name: Verify named-volume persistence
         run: ./deploy/named-volume-smoke.sh
+
+  appliance-theme:
+    name: Appliance dark/light theme smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Boot the disposable appliance and verify both themes load clean
+        run: ./deploy/theme-smoke.sh
 
   multiarch-build:
     name: Build appliance images (${{ matrix.platform }})

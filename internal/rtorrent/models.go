@@ -3,7 +3,11 @@
 // handoff's torrents[] / torrentDetail[hash] models.
 package rtorrent
 
-import "time"
+import (
+	"net"
+	"strconv"
+	"time"
+)
 
 // State is the normalized torrent state shown in the UI.
 type State string
@@ -18,6 +22,21 @@ const (
 )
 
 // AllStates enumerates every normalized state (used for aggregate counts).
+// SlotValue returns the custom-slot value used for ratio-group assignment
+// (PAR-4.2). Unknown slots fall back to custom2.
+func (t Torrent) SlotValue(slot string) string {
+	switch slot {
+	case "custom3":
+		return t.Custom3
+	case "custom4":
+		return t.Custom4
+	case "custom5":
+		return t.Custom5
+	default:
+		return t.Custom2
+	}
+}
+
 var AllStates = []State{StateDownloading, StateSeeding, StateStopped, StateQueued, StateChecking, StateError}
 
 // Torrent is one row of the normalized session model.
@@ -94,7 +113,20 @@ type Peer struct {
 	CompletedPercent float64 `json:"completedPercent"`
 	DownRate         int64   `json:"downRate"`
 	UpRate           int64   `json:"upRate"`
-	Flags            string  `json:"flags"` // composed letters (E encrypted, I incoming, S snubbed)
+	DownloadedBytes  int64   `json:"downloadedBytes"` // p.down_total
+	UploadedBytes    int64   `json:"uploadedBytes"`   // p.up_total
+	IsSnubbed        bool    `json:"isSnubbed"`       // p.is_snubbed (S flag)
+	CountryCode      string  `json:"countryCode"`     // ISO 3166-1 alpha-2; "" when GeoIP is unavailable
+	Flags            string  `json:"flags"`           // composed letters (E encrypted, I incoming, S snubbed)
+}
+
+// Key returns the stable ip:port identity used to key peer rows.
+func (p Peer) Key() string {
+	port := p.Port
+	if port < 0 {
+		port = 0
+	}
+	return net.JoinHostPort(p.Address, strconv.Itoa(port))
 }
 
 // Tracker is one entry of the t.multicall detail.
@@ -129,6 +161,12 @@ type Detail struct {
 	Peers    []Peer    `json:"peers"`
 	Trackers []Tracker `json:"trackers"`
 	Transfer Transfer  `json:"transfer"`
+	// BitfieldHex is rTorrent's d.bitfield: a hex string where each hex digit
+	// pair is one byte of the piece bitfield (MSB = earliest piece). It is
+	// deliberately not serialized in the detail JSON — the WebSocket layer
+	// delivers it in its own diffed envelope so unchanged bitfields are not
+	// re-sent every detail tick (PAR-2.6).
+	BitfieldHex string `json:"-"`
 }
 
 // GlobalStats is the global session snapshot for the status bar and cards.

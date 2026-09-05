@@ -1,4 +1,9 @@
+@import "./palette.css";
 @import "./tokens.css";
+@import "./themes/light.css";
+@import "./themes/midnight.css";
+@import "./themes/contrast.css";
+@import "./themes/classic.css";
 
 /* IBM Plex Sans — self-hosted (bundled woff2, no external font request).
    Google Fonts serves it as a variable font; weights 400/500/600 resolve
@@ -13,6 +18,46 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Visible keyboard focus everywhere (POL-8.5): the one accent-derived ring.
+ * Individual `outline: none` resets below only remove the unfocused chrome;
+ * this rule restores a ring whenever keyboard focus lands. */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* Theme-aware everything (THM-9.5): native controls, scrollbars, and text
+ * selection follow the theme. color-scheme is inherited, so date/color
+ * inputs and form controls render in the theme's mode; light themes flip
+ * it explicitly below. */
+html {
+  color-scheme: dark;
+}
+html[data-theme="light"],
+html[data-theme="classic"] {
+  color-scheme: light;
+}
+* {
+  scrollbar-color: var(--border-control) var(--bg-panel);
+}
+::selection {
+  background: var(--accent-tint-strong);
+  color: var(--text-primary);
+}
+
+/* Screen-reader-only live announcements (table selection model). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 html,

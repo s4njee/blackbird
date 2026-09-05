@@ -1,0 +1,89 @@
+/* ---- Action toolbar (Epic 5.6) ---- */
+
+.toolbar-button,
+.toolbar-more {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 9px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-body);
+  font: inherit;
+  font-size: var(--fs-control);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toolbar-button i {
+  color: var(--accent);
+  font-size: 10px;
+  font-style: normal;
+}
+.toolbar-button:hover:not(:disabled),
+.toolbar-more:hover:not(:disabled) {
+  background: var(--bg-control-active);
+  border-color: var(--border-strong);
+}
+.toolbar-button:disabled,
+.toolbar-more:disabled {
+  color: var(--text-ghost);
+  border-color: var(--border-default);
+  cursor: default;
+}
+.toolbar-button:disabled i {
+  color: var(--text-ghost);
+}
+.toolbar-button.destructive:not(:disabled) {
+  color: var(--status-error);
+}
+.toolbar-priority {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 7px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-body);
+  font-size: var(--fs-control);
+  white-space: nowrap;
+}
+.toolbar-priority select {
+  min-width: 64px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.toolbar-priority:has(select:disabled) {
+  color: var(--text-ghost);
+  border-color: var(--border-default);
+}
+.toolbar-priority select:disabled {
+  cursor: default;
+}
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 var(--sp-2);
+  background: var(--border-default);
+}
+.toolbar-spacer {
+  flex: 1;
+}
+.toolbar-more {
+  padding: 0 7px;
+  letter-spacing: 1px;
+}
+.selection-readout {
+  margin-left: var(--sp-2);
+  color: var(--text-faint);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}

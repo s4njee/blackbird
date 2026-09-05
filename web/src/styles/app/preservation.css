@@ -1,0 +1,49 @@
+.preservation-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+}
+.preservation-view > p {
+  max-width: 1100px;
+}
+.preservation-add,
+.preservation-pin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid var(--border-control);
+}
+.preservation-add label,
+.preservation-pin label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+}
+.preservation-add select {
+  max-width: min(500px, 100%);
+}
+.preservation-view input,
+.preservation-view select {
+  color: var(--text-primary);
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
+  padding: 6px;
+}
+.preservation-history {
+  overflow: auto;
+  max-height: 400px;
+}
+.preservation-history th,
+.preservation-history td {
+  padding: 8px;
+  text-align: left;
+}
+.preservation-view h2,
+.preservation-view p {
+  overflow-wrap: anywhere;
+}

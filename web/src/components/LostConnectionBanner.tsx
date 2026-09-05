@@ -3,12 +3,12 @@ import { connection, lastError } from "../store/session";
 
 /**
  * Persistent bar shown above the toolbar while the daemon is unreachable.
- * Deliberately fire-and-forget: it disappears automatically on reconnect.
+ * A live region so assistive tech announces disconnects and recovery.
  */
 export function LostConnectionBanner() {
   return (
     <Show when={connection() === "disconnected"}>
-      <div class="lost-connection" title={lastError() || undefined}>
+      <div class="lost-connection" role="alert" title={lastError() || undefined}>
         Lost connection to rTorrent — retrying…
       </div>
     </Show>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Example Music Tracker</title>
+  <link href="https://music.example/" />
+  <updated>2026-09-02T14:00:00Z</updated>
+  <entry>
+    <title>Artist - Album (2026) [FLAC]</title>
+    <link href="https://music.example/torrents/555" />
+    <link href="https://music.example/dl/555.torrent" rel="enclosure" type="application/x-bittorrent" length="412876800" />
+    <id>tag:music.example,2026:555</id>
+    <category term="Music" />
+    <category term="FLAC" />
+    <published>2026-09-02T13:45:00Z</published>
+    <updated>2026-09-02T13:45:00Z</updated>
+  </entry>
+  <entry>
+    <title>Artist - Single (2026) [MP3 320]</title>
+    <link href="https://music.example/torrents/556" />
+    <link href="https://music.example/dl/556.torrent" rel="enclosure" length="14211" />
+    <id>tag:music.example,2026:556</id>
+    <category term="Music" />
+    <published>2026-09-02T12:30:00Z</published>
+  </entry>
+  <entry>
+    <title>Untitled bootleg without enclosure</title>
+    <link href="https://music.example/torrents/557" />
+    <id>tag:music.example,2026:557</id>
+    <published>not-a-date</published>
+  </entry>
+</feed>

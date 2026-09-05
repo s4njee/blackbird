@@ -1,0 +1,65 @@
+/* Midnight (THM-9.2): true-black OLED surfaces, near-white text, brighter accents. */
+
+html[data-theme="midnight"] {
+  /* ---- Backgrounds ---- */
+  --pal-bg-canvas: #000000;
+  --pal-bg-app: #000000;
+  --pal-bg-row-alt: #060607;
+  --pal-bg-panel: #0a0a0b;
+  --pal-bg-chrome: #0e0e10;
+  --pal-bg-elevated: #141416;
+  --pal-bg-control: #161618;
+  --pal-bg-control-active: #1c1c20;
+  --pal-bg-track: #1a1a1e;
+  --pal-bg-track-dim: #121215;
+
+  /* ---- Borders ---- */
+  --pal-border-strong: #2e3138;
+  --pal-border-default: #1f2227;
+  --pal-border-control: #26292f;
+  --pal-border-subtle: #191b1f;
+  --pal-border-row: #141518;
+  --pal-border-row-dim: #101214;
+
+  /* ---- Text ---- */
+  --pal-text-primary: #f2f4f6;
+  --pal-text-body: #e6e9ec;
+  --pal-text-secondary: #c3c8cd;
+  --pal-text-muted: #a7adb4;
+  --pal-text-dim: #949aa2;
+  --pal-text-faint: #82888f;
+  --pal-text-fainter: #71767d;
+  --pal-text-ghost: #62676d;
+
+  /* ---- State ---- */
+  --pal-state-disabled: #4b5158;
+
+  /* ---- Accent ---- */
+  --pal-accent: #4c5fd5;
+  --pal-accent-foreground: #ffffff;
+  --pal-accent-ink: #ffffff;
+
+  /* ---- Rates ---- */
+  --pal-rate-up: #22d3ee;
+  --pal-rate-up-text: #8ae4ef;
+
+  /* ---- Progress (blue/green, never the accent) ---- */
+  --pal-progress-active: #2f9dff;
+  --pal-progress-complete: #3fb950;
+
+  /* ---- Status ---- */
+  --pal-status-error: #f0765f;
+  --pal-status-warn: #d9b06a;
+
+  /* ---- Label palette ---- */
+  --pal-label-iso: #f5a623;
+  --pal-label-archive: #d9b06a;
+  --pal-label-kernel: #22d3ee;
+  --pal-label-apps: #b39dff;
+  --pal-label-media: #f0765f;
+
+  /* ---- Shadows ---- */
+  --pal-shadow-window: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --pal-shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --pal-shadow-menu: 0 18px 40px rgba(0, 0, 0, 0.6);
+}

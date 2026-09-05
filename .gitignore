@@ -4,4 +4,14 @@ deploy/.env
 deploy/config.yml
 data/
 web/node_modules/
-web/.test-dist/
+
+# Built binaries are platform-specific; never commit them.
+bin/
+
+# Test artifacts
+web/coverage/
+web/playwright-report/
+web/test-results/
+
+# Compiled Go test binaries (go test -c)
+*.test

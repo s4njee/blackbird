@@ -1,0 +1,65 @@
+/* Classic ruTorrent light (THM-9.2): gray-blue surfaces, near-black text, ruTorrent blue accent. */
+
+html[data-theme="classic"] {
+  /* ---- Backgrounds ---- */
+  --pal-bg-canvas: #ccd3db;
+  --pal-bg-app: #e8edf2;
+  --pal-bg-row-alt: #dfe6ec;
+  --pal-bg-panel: #ffffff;
+  --pal-bg-chrome: #f2f5f8;
+  --pal-bg-elevated: #ffffff;
+  --pal-bg-control: #e3e9ef;
+  --pal-bg-control-active: #d3dce4;
+  --pal-bg-track: #dbe1e8;
+  --pal-bg-track-dim: #eef2f6;
+
+  /* ---- Borders ---- */
+  --pal-border-strong: #9fb0bd;
+  --pal-border-default: #c3ccd4;
+  --pal-border-control: #aebdca;
+  --pal-border-subtle: #d5dce3;
+  --pal-border-row: #d8dfe6;
+  --pal-border-row-dim: #e2e8ee;
+
+  /* ---- Text ---- */
+  --pal-text-primary: #0f1417;
+  --pal-text-body: #1a1d21;
+  --pal-text-secondary: #394049;
+  --pal-text-muted: #4d545c;
+  --pal-text-dim: #5b6167;
+  --pal-text-faint: #6b7178;
+  --pal-text-fainter: #7c828a;
+  --pal-text-ghost: #8b9199;
+
+  /* ---- State ---- */
+  --pal-state-disabled: #9aa0a7;
+
+  /* ---- Accent ---- */
+  --pal-accent: #0b5cad;
+  --pal-accent-foreground: #ffffff;
+  --pal-accent-ink: #000000;
+
+  /* ---- Rates ---- */
+  --pal-rate-up: #0e7490;
+  --pal-rate-up-text: #155e75;
+
+  /* ---- Progress (blue/green, never the accent) ---- */
+  --pal-progress-active: #2f9dff;
+  --pal-progress-complete: #339933;
+
+  /* ---- Status ---- */
+  --pal-status-error: #c0392b;
+  --pal-status-warn: #b45309;
+
+  /* ---- Label palette ---- */
+  --pal-label-iso: #b45309;
+  --pal-label-archive: #8a6d2b;
+  --pal-label-kernel: #0e7490;
+  --pal-label-apps: #6d28d9;
+  --pal-label-media: #c0392b;
+
+  /* ---- Shadows (softened for light) ---- */
+  --pal-shadow-window: 0 24px 60px rgba(0, 0, 0, 0.18);
+  --pal-shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.22);
+  --pal-shadow-menu: 0 18px 40px rgba(0, 0, 0, 0.18);
+}

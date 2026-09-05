@@ -12,8 +12,10 @@ import (
 
 	"blackbird/internal/config"
 	"blackbird/internal/fakertorrent"
+	"blackbird/internal/history"
 	"blackbird/internal/poller"
 	"blackbird/internal/rtorrent"
+	"blackbird/internal/traffic"
 )
 
 // testStore is a ConfigStore stub over an in-memory config.
@@ -22,11 +24,6 @@ type testStore struct {
 }
 
 func (s *testStore) Get() config.Config { return s.cfg }
-
-func (s *testStore) SaveTuning(t config.Tuning) error {
-	s.cfg.Tuning = t
-	return nil
-}
 
 func (s *testStore) SaveSettings(c config.Config) error {
 	s.cfg = c
@@ -39,13 +36,14 @@ func (s *testStore) DownloadDirs() []string { return []string{"/mnt/data"} }
 // testStack bundles everything newTestAPI builds so tests can script the
 // fake daemon (faults, stopped torrents, disconnect/reconnect).
 type testStack struct {
-	ts     *httptest.Server
-	srv    *Server
-	p      *poller.Poller
-	rtc    *rtorrent.Client
-	daemon *fakertorrent.Daemon
-	sock   string
-	store  *testStore
+	ts      *httptest.Server
+	srv     *Server
+	p       *poller.Poller
+	rtc     *rtorrent.Client
+	daemon  *fakertorrent.Daemon
+	sock    string
+	store   *testStore
+	traffic *traffic.Tracker
 }
 
 // newTestStack builds a full API stack (fake rtorrent → client → poller → API)
@@ -70,7 +68,14 @@ func newTestStack(t *testing.T, passwordHash string, opts fakertorrent.Options) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := poller.New(rtc, poller.Options{Interval: 20 * time.Millisecond, Volumes: []string{"/"}})
+	log := history.New(history.Options{MaxEntriesPerTorrent: 200, Retention: time.Hour})
+	p := poller.New(rtc, poller.Options{
+		Interval: 20 * time.Millisecond,
+		Volumes:  []string{"/"},
+		OnTorrentMessage: func(hash, message string) {
+			log.Add(hash, history.Entry{Kind: history.KindMessage, Actor: "daemon", Action: "message", Result: "info", Message: message})
+		},
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	go p.Run(ctx)
@@ -85,10 +90,19 @@ func newTestStack(t *testing.T, passwordHash string, opts fakertorrent.Options) 
 		Directories: config.Directories{Default: "/mnt/data"},
 		Volumes:     []string{"/"},
 	}}
+	tracker, err := traffic.New(traffic.Options{
+		Path:          filepath.Join(t.TempDir(), "traffic.jsonl"),
+		RetentionDays: 90,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	srv := New(Options{
 		Poller:   p,
 		RTorrent: rtc,
 		Store:    store,
+		History:  log,
+		Traffic:  tracker,
 		Health: func() HealthInfo {
 			snap := p.Snapshot()
 			return HealthInfo{Connection: string(snap.Status), Stale: snap.Stale, Torrents: len(snap.Torrents)}
@@ -97,7 +111,7 @@ func newTestStack(t *testing.T, passwordHash string, opts fakertorrent.Options) 
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	t.Cleanup(srv.Close)
-	return &testStack{ts: ts, srv: srv, p: p, rtc: rtc, daemon: daemon, sock: sock, store: store}
+	return &testStack{ts: ts, srv: srv, p: p, rtc: rtc, daemon: daemon, sock: sock, store: store, traffic: tracker}
 }
 
 // newTestAPI builds a full API stack (fake rtorrent → client → poller → API)

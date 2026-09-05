@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"blackbird/internal/history"
 	"blackbird/internal/rtorrent"
 )
 
@@ -45,6 +46,7 @@ type moveJob struct {
 	Destination string       `json:"destination"`
 	Status      string       `json:"status"` // running | completed | cancelled
 	Results     []moveResult `json:"results"`
+	Actor       string       `json:"-"` // who started the job (history); never serialized
 	cancel      context.CancelFunc
 }
 
@@ -53,11 +55,30 @@ type directoryEntry struct {
 	Path string `json:"path"`
 }
 
+// directoryRoot is one browsable root with its free space (PAR-5.1), so the
+// browser component can show capacity without a second round trip.
+type directoryRoot struct {
+	Path       string `json:"path"`
+	FreeBytes  uint64 `json:"freeBytes"`
+	TotalBytes uint64 `json:"totalBytes"`
+}
+
 type directoryResponse struct {
-	Roots   []string         `json:"roots"`
+	Roots   []directoryRoot  `json:"roots"`
 	Path    string           `json:"path"`
 	Parent  string           `json:"parent,omitempty"`
 	Entries []directoryEntry `json:"entries"`
+}
+
+// rootSpace stats one root; unreadable roots report zero space but stay
+// listed (browsing them surfaces the real error).
+func rootSpace(path string) (free, total uint64) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(path, &st); err != nil {
+		return 0, 0
+	}
+	bsize := uint64(st.Bsize)
+	return st.Bavail * bsize, st.Blocks * bsize
 }
 
 func (s *Server) directoryHandler(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +100,13 @@ func (s *Server) directoryHandler(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "directory_unavailable", err.Error())
 		return
 	}
-	result := directoryResponse{Roots: roots, Path: path}
+	// Respond with the cleaned path so ".." segments never leak back out.
+	path = filepath.Clean(path)
+	result := directoryResponse{Path: path}
+	for _, root := range roots {
+		free, total := rootSpace(root)
+		result.Roots = append(result.Roots, directoryRoot{Path: root, FreeBytes: free, TotalBytes: total})
+	}
 	if parent := filepath.Dir(path); parent != path && rtorrent.CheckWithin(parent, roots) == nil {
 		result.Parent = parent
 	}
@@ -96,6 +123,58 @@ func (s *Server) directoryHandler(w http.ResponseWriter, r *http.Request) {
 		return strings.ToLower(result.Entries[i].Name) < strings.ToLower(result.Entries[j].Name)
 	})
 	writeJSON(w, http.StatusOK, result)
+}
+
+type directoryCreateRequest struct {
+	// Path is the existing directory to create inside (browsed path).
+	Path string `json:"path"`
+	// Name is the new single directory name (no separators).
+	Name string `json:"name"`
+}
+
+type directoryCreateResponse struct {
+	Path    string `json:"path"`
+	Created bool   `json:"created"`
+}
+
+// directoryCreateHandler creates one directory level under a browsed path
+// (PAR-5.1). Both the parent and the result must stay inside the configured
+// download roots; anything else gets the SEC-2.3 error code shared with the
+// move engine.
+func (s *Server) directoryCreateHandler(w http.ResponseWriter, r *http.Request) {
+	var req directoryCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: "+err.Error())
+		return
+	}
+	roots := uniqueDirs(s.opts.Store.DownloadDirs())
+	if len(roots) == 0 {
+		writeAPIError(w, http.StatusBadRequest, "no_download_roots", "no download roots are configured")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		writeAPIError(w, http.StatusBadRequest, "bad_request", "name must be a single directory name")
+		return
+	}
+	target := filepath.Join(filepath.Clean(req.Path), name)
+	if err := rtorrent.CheckWithin(target, roots); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "path_outside_download_dirs", "directory browser is limited to configured download roots: "+err.Error())
+		return
+	}
+	if info, err := os.Stat(target); err == nil {
+		if !info.IsDir() {
+			writeAPIError(w, http.StatusConflict, "not_a_directory", target+" exists and is not a directory")
+			return
+		}
+		writeJSON(w, http.StatusOK, directoryCreateResponse{Path: target, Created: false})
+		return
+	}
+	if err := os.Mkdir(target, 0o755); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "directory_unavailable", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, directoryCreateResponse{Path: target, Created: true})
 }
 
 func (s *Server) moveStartHandler(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +200,7 @@ func (s *Server) moveStartHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	id := fmt.Sprintf("move-%d", atomic.AddUint64(&s.moveSeq, 1))
-	job := &moveJob{ID: id, Mode: req.Mode, Destination: req.Destination, Status: "running", cancel: cancel, Results: make([]moveResult, len(req.Hashes))}
+	job := &moveJob{ID: id, Mode: req.Mode, Destination: req.Destination, Status: "running", Actor: actorFromRequest(r, s.auth), cancel: cancel, Results: make([]moveResult, len(req.Hashes))}
 	for i, hash := range req.Hashes {
 		job.Results[i] = moveResult{Hash: hash, Status: "pending"}
 	}
@@ -171,6 +250,22 @@ func (s *Server) runMoveJob(ctx context.Context, job *moveJob) {
 			s.finishMoveJob(job, i, "failed", err.Error())
 		} else {
 			s.finishMoveJob(job, i, "completed", "")
+		}
+		// Every per-torrent move outcome lands in the history (Logger tab
+		// and global History view) under the job's actor.
+		if s.history != nil {
+			message := "destination: " + job.Destination
+			if detail := job.Results[i].Error; detail != "" {
+				message += ": " + detail
+			}
+			s.history.Add(job.Results[i].Hash, history.Entry{
+				Kind:    history.KindMove,
+				Actor:   job.Actor,
+				Action:  string(job.Mode),
+				Result:  job.Results[i].Status,
+				Message: message,
+				Name:    s.torrentName(job.Results[i].Hash),
+			})
 		}
 	}
 	s.moveMu.Lock()

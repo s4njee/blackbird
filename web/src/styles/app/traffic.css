@@ -1,0 +1,112 @@
+/* ---- Traffic history + host cards (PAR-5.2) ---- */
+.traffic-panel,
+.host-cards {
+  margin-top: var(--sp-5);
+}
+.host-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.traffic-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.traffic-presets {
+  display: flex;
+  gap: var(--sp-2);
+}
+.traffic-presets button {
+  height: 24px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.traffic-presets button.active {
+  border-color: var(--accent);
+  background: var(--accent-tint-strong);
+  color: var(--accent-text);
+}
+.traffic-date {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
+}
+.traffic-date input {
+  height: 24px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-meta);
+}
+.traffic-totals {
+  margin-left: auto;
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
+}
+.traffic-export {
+  color: var(--accent-text);
+  font-size: var(--fs-meta);
+}
+.traffic-row {
+  grid-template-columns: 7px minmax(44px, 64px) minmax(40px, 1fr) auto;
+}
+.traffic-dot {
+  background: var(--text-faint);
+}
+.traffic-row > div {
+  display: grid;
+  gap: 2px;
+  height: auto;
+  background: transparent;
+}
+.traffic-row > div b {
+  height: 5px;
+}
+.traffic-down-bar {
+  background: var(--accent);
+}
+.traffic-up-bar {
+  background: var(--rate-up);
+}
+.traffic-row > small {
+  white-space: nowrap;
+}
+.traffic-retention {
+  margin: var(--sp-3) 0 0;
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
+}
+@media (max-width: 1050px) {
+  .stats-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .stats-view {
+    padding: var(--sp-4);
+  }
+  .stats-cards,
+  .stats-bottom {
+    grid-template-columns: 1fr;
+  }
+  .throughput-panel header {
+    flex-wrap: wrap;
+  }
+  .throughput-panel header > b {
+    margin-left: 0;
+  }
+  .filter {
+    display: none;
+  }
+}

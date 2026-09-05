@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
-ARG RTORRENT_VERSION=0.16.18
-ARG LIBTORRENT_VERSION=0.16.18
-ARG RTORRENT_SHA256=0c7d4902cc914fabe984284330333c7b82aec9951c55915712cdd10acaae65cb
-ARG LIBTORRENT_SHA256=d5077bfd8b9c20ff903e13fc1fa68be3f7da84e927f1a4f28cf24a8206edd05d
+ARG RTORRENT_VERSION=0.15.7
+ARG LIBTORRENT_VERSION=0.15.7
+ARG RTORRENT_SHA256=f5f382b340ecdb581236653924a5f37eb65e127df415e79c74a6326146d6a5f8
+ARG LIBTORRENT_SHA256=3b2edcb5b89c2a316af562303479e7e14c66c19fed4f8ae794f9383499cced07
 
 FROM debian:bookworm-slim AS builder
 ARG RTORRENT_VERSION
@@ -73,7 +73,9 @@ RUN ldconfig \
 	&& chmod 0755 /usr/local/bin/rtorrent-entrypoint \
     && printf 'rTorrent %s; libtorrent %s\n' "${RTORRENT_VERSION}" "${LIBTORRENT_VERSION}" > /usr/share/doc/rtorrent-blackbird-version
 
-USER 1000:1000
+# No USER directive: the entrypoint starts as root to repair mount-point
+# ownership, then drops to PUID:PGID (default 1000:1000) via setpriv before
+# rTorrent runs. See entrypoint.sh.
 WORKDIR /data
 VOLUME ["/downloads", "/data/watch", "/data/session"]
 EXPOSE 5000

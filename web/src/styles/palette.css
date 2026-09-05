@@ -1,0 +1,83 @@
+/*
+ * Palette layer (THM-9.1): raw color values for the active theme. A theme
+ * is exactly this value set — the semantic layer in tokens.css only aliases
+ * these variables and never holds a literal. The default block below is the
+ * Blackbird Dark handoff palette; THM-9.2 adds overrides per theme.
+ *
+ * stylelint (color-no-hex + function-disallowed-list rgb()/rgba()) bans
+ * literals everywhere except this file (and themes/ later).
+ */
+
+:root {
+  /* ---- Backgrounds ---- */
+  --pal-bg-canvas: #0b0c0d; /* page backdrop outside the app window */
+  --pal-bg-app: #101214; /* app window base, odd table rows */
+  --pal-bg-row-alt: #121417; /* alternating table rows, action toolbar */
+  --pal-bg-panel: #0e1012; /* sidebar, detail panel, stat sub-panels, inputs */
+  --pal-bg-chrome: #15181b; /* top bar, table header, tab strip, status bar, cards */
+  --pal-bg-elevated: #1a1e22; /* context menu, popovers */
+  --pal-bg-control: #1b1f23; /* toolbar buttons */
+  --pal-bg-control-active: #1f2429; /* selected segmented-control segment */
+  --pal-bg-track: #1e2226; /* progress-bar troughs, neutral chips */
+  --pal-bg-track-dim: #191c20; /* row bottom border, skipped-file chips */
+
+  /* ---- Borders ---- */
+  --pal-border-strong: #33383e; /* modal + popover borders, dashed dropzone */
+  --pal-border-default: #26292e; /* panel and section dividers */
+  --pal-border-control: #2c3035; /* buttons, inputs */
+  --pal-border-subtle: #1c1f23; /* table column dividers */
+  --pal-border-row: #191c20; /* main table row separators */
+  --pal-border-row-dim: #17191c; /* detail/peer table row separators */
+
+  /* ---- Text ---- */
+  --pal-text-primary: #e8eaed; /* headings, emphasized values */
+  --pal-text-body: #d6d9dd; /* default body text, table cells */
+  --pal-text-secondary: #b6bbc1; /* sidebar items, secondary labels */
+  --pal-text-muted: #9aa0a7; /* numeric cells, column headers */
+  --pal-text-dim: #8b9199; /* inactive tabs, complete-status text */
+  --pal-text-faint: #7c828a; /* meta text, stopped status */
+  --pal-text-fainter: #6b7178; /* hints, timestamps, tracker column */
+  --pal-text-ghost: #5d6369; /* section captions, placeholder text */
+
+  /* ---- State ---- */
+  --pal-state-disabled: #4b5158; /* em-dash cells, stopped + incomplete bar fill */
+
+  /*
+   * Accent base — the single tweakable theming variable. All accent-derived
+   * semantic tokens (--accent-tint, --accent-text, --focus-ring) compute
+   * from this with color-mix(), so changing it re-tints correctly.
+   */
+  --pal-accent: #35418f;
+  --pal-accent-foreground: #f4f2ff; /* text on solid accent controls */
+  /* Mix endpoint for derived accent text/ring: white on dark themes so the
+   * derivations stay luminous; light themes override this with black so
+   * accent text stays readable on light chips (THM-9.2). */
+  --pal-accent-ink: #ffffff;
+
+  /* ---- Rates ---- */
+  --pal-rate-up: #22d3ee; /* upload rate, peer "have" bars, PEX/DHT rows */
+  --pal-rate-up-text: #8ae4ef; /* upload-ish text on tinted chips */
+
+  /*
+   * Progress — deliberately NOT the accent and never derived from it.
+   * Blue below 100%, green at 100%, --state-disabled when stopped.
+   */
+  --pal-progress-active: #2f9dff;
+  --pal-progress-complete: #3fb950;
+
+  /* ---- Status ---- */
+  --pal-status-error: #e0705a; /* tracker error, destructive items, near-full volume */
+  --pal-status-warn: #c9a86a; /* timed-out tracker, archive label */
+
+  /* ---- Label palette (default; YAML-configurable in later epics) ---- */
+  --pal-label-iso: #f59e0b;
+  --pal-label-archive: #c9a86a;
+  --pal-label-kernel: #22d3ee;
+  --pal-label-apps: #a78bfa;
+  --pal-label-media: #e0705a;
+
+  /* ---- Shadows (a theme may override these and radii only) ---- */
+  --pal-shadow-window: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --pal-shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --pal-shadow-menu: 0 18px 40px rgba(0, 0, 0, 0.6);
+}

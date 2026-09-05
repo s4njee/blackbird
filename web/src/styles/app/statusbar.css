@@ -1,0 +1,42 @@
+/* ---- Status bar (26px) ---- */
+
+.statusbar {
+  height: var(--h-statusbar);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: 0 var(--sp-5);
+  background: var(--bg-chrome);
+  border-top: 1px solid var(--border-default);
+  font-size: var(--fs-meta);
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sb-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--status-error);
+}
+
+.sb-dot.ok {
+  background: var(--accent);
+}
+
+.sb-item {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-item.versions {
+  color: var(--text-secondary);
+}
+
+.sb-spacer {
+  flex: 1;
+}

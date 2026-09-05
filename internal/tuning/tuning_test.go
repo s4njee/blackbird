@@ -49,26 +49,26 @@ func TestEntriesMapsKeysAndSetters(t *testing.T) {
 	}
 
 	wantSetters := map[string]string{
-		"network.port_range":              "network.port_range.set",
-		"network.port_random":             "network.port_random.set",
-		"protocol.encryption":             "protocol.encryption.set",
-		"dht.mode":                        "dht.mode.set",
-		"dht.port":                        "dht.port.set",
-		"trackers.use_udp":                "trackers.use_udp.set",
-		"protocol.pex":                    "protocol.pex.set",
-		"network.local_address":           "network.local_address.set",
-		"network.http.max_open":           "network.http.max_open.set",
-		"network.max_open_sockets":        "network.max_open_sockets.set",
-		"network.max_open_files":          "network.max_open_files.set",
-		"throttle.min_peers.normal":       "throttle.min_peers.normal.set",
-		"throttle.max_peers.normal":       "throttle.max_peers.normal.set",
-		"throttle.min_peers.seeded":       "throttle.min_peers.seeded.set",
-		"throttle.max_peers.seeded":       "throttle.max_peers.seeded.set",
-		"throttle.max_uploads":            "throttle.max_uploads.set",
-		"throttle.max_uploads.global":     "throttle.max_uploads.global.set",
-		"throttle.global_down.max_rate":   "throttle.global_down.max_rate.set",
-		"throttle.global_up.max_rate":     "throttle.global_up.max_rate.set",
-		"throttle.max_downloads.global":   "throttle.max_downloads.global.set",
+		"network.port_range":            "network.port_range.set",
+		"network.port_random":           "network.port_random.set",
+		"protocol.encryption":           "protocol.encryption.set",
+		"dht.mode":                      "dht.mode.set",
+		"dht.port":                      "dht.port.set",
+		"trackers.use_udp":              "trackers.use_udp.set",
+		"protocol.pex":                  "protocol.pex.set",
+		"network.local_address":         "network.local_address.set",
+		"network.http.max_open":         "network.http.max_open.set",
+		"network.max_open_sockets":      "network.max_open_sockets.set",
+		"network.max_open_files":        "network.max_open_files.set",
+		"throttle.min_peers.normal":     "throttle.min_peers.normal.set",
+		"throttle.max_peers.normal":     "throttle.max_peers.normal.set",
+		"throttle.min_peers.seeded":     "throttle.min_peers.seeded.set",
+		"throttle.max_peers.seeded":     "throttle.max_peers.seeded.set",
+		"throttle.max_uploads":          "throttle.max_uploads.set",
+		"throttle.max_uploads.global":   "throttle.max_uploads.global.set",
+		"throttle.global_down.max_rate": "throttle.global_down.max_rate.set",
+		"throttle.global_up.max_rate":   "throttle.global_up.max_rate.set",
+		"throttle.max_downloads.global": "throttle.max_downloads.global.set",
 	}
 	for key, setter := range wantSetters {
 		e, ok := got[key]
@@ -121,15 +121,15 @@ func TestEntriesEmptyTuning(t *testing.T) {
 
 func TestDiffOnlyChangedKeys(t *testing.T) {
 	prev := config.Tuning{
-		DHTMode:      strPtr("auto"),
-		MaxUploads:   intPtr(12),
+		DHTMode:        strPtr("auto"),
+		MaxUploads:     intPtr(12),
 		GlobalUpRateKB: int64Ptr(20480),
 	}
 	next := config.Tuning{
-		DHTMode:        strPtr("auto"),   // unchanged
-		MaxUploads:     intPtr(16),       // changed
-		GlobalUpRateKB: int64Ptr(20480),  // unchanged
-		PEX:            boolPtr(false),   // newly declared
+		DHTMode:        strPtr("auto"),  // unchanged
+		MaxUploads:     intPtr(16),      // changed
+		GlobalUpRateKB: int64Ptr(20480), // unchanged
+		PEX:            boolPtr(false),  // newly declared
 	}
 	changed := Diff(prev, next)
 	if len(changed) != 2 {
@@ -151,9 +151,9 @@ func TestDiffOnlyChangedKeys(t *testing.T) {
 
 // fakeRT for Apply tests: records multicall entries, can fault per method.
 type fakeRT struct {
-	ln         net.Listener
-	seen       map[string]xmlrpc.Value // setter → value
-	faultOn    map[string]bool
+	ln      net.Listener
+	seen    map[string]xmlrpc.Value // setter → value
+	faultOn map[string]bool
 }
 
 func startFake(t *testing.T, faultOn map[string]bool) *fakeRT {
@@ -228,10 +228,10 @@ func TestApplyReportsPerKeyFailures(t *testing.T) {
 	c := newClient(t, f)
 
 	tun := config.Tuning{
-		DHTMode:      strPtr("on"),
-		PEX:          boolPtr(false),
-		MaxUploads:   intPtr(12),
-		PortRandom:   boolPtr(true),
+		DHTMode:    strPtr("on"),
+		PEX:        boolPtr(false),
+		MaxUploads: intPtr(12),
+		PortRandom: boolPtr(true),
 	}
 	results := Apply(context.Background(), c, Entries(tun))
 	if len(results) != 4 {
@@ -288,6 +288,72 @@ func TestApplyBatchTransportFailure(t *testing.T) {
 		}
 		if errors.Is(r.Err, context.DeadlineExceeded) {
 			t.Errorf("unexpected deadline error type")
+		}
+	}
+}
+
+// TestMethodTableIntegrity pins the POL-8.8 unified table: unique keys with
+// non-empty setters/getters, stable order, and lookup agreement.
+func TestMethodTableIntegrity(t *testing.T) {
+	if len(methodTable) != 21 {
+		t.Fatalf("methodTable has %d rows, want 21", len(methodTable))
+	}
+	seen := map[string]bool{}
+	keys := Keys()
+	if len(keys) != len(methodTable) {
+		t.Fatalf("Keys() has %d entries, want %d", len(keys), len(methodTable))
+	}
+	for i, row := range methodTable {
+		if row.Key == "" || row.Setter == "" || row.Getter == "" {
+			t.Fatalf("row %d has an empty field: %+v", i, row)
+		}
+		if seen[row.Key] {
+			t.Fatalf("duplicate key %q", row.Key)
+		}
+		seen[row.Key] = true
+		if keys[i] != row.Key {
+			t.Fatalf("Keys()[%d] = %q, want %q (table order)", i, keys[i], row.Key)
+		}
+		setter, ok := setterFor(row.Key)
+		if !ok || setter != row.Setter {
+			t.Fatalf("setterFor(%q) = %q, %v; want %q, true", row.Key, setter, ok, row.Setter)
+		}
+		getter, ok := GetterFor(row.Key)
+		if !ok || getter != row.Getter {
+			t.Fatalf("GetterFor(%q) = %q, %v; want %q, true", row.Key, getter, ok, row.Getter)
+		}
+	}
+	if _, ok := setterFor("no.such.key"); ok {
+		t.Fatal("setterFor accepted an unknown key")
+	}
+	if _, ok := GetterFor("no.such.key"); ok {
+		t.Fatal("GetterFor accepted an unknown key")
+	}
+}
+
+// TestMethodTableCoversEntries proves every Entries() key resolves through
+// the table: a fully-populated Tuning must produce one entry per table row,
+// each carrying the table's setter.
+func TestMethodTableCoversEntries(t *testing.T) {
+	full := config.Tuning{
+		PortRange: strPtr("1-2"), PortRandom: boolPtr(true), Encryption: strPtr("require"),
+		DHTMode: strPtr("auto"), DHTPort: intPtr(1), UseUDP: boolPtr(true), PEX: boolPtr(true),
+		LocalAddress: strPtr("x"), BindAddress: strPtr("y"), HTTPMaxOpen: intPtr(1),
+		MaxOpenSockets: intPtr(1), MaxOpenFiles: intPtr(1), MinPeersNormal: intPtr(1),
+		MaxPeersNormal: intPtr(1), MinPeersSeeded: intPtr(1), MaxPeersSeeded: intPtr(1),
+		MaxUploads: intPtr(1), MaxUploadsGlobal: intPtr(1), GlobalDownRateKB: int64Ptr(1),
+		GlobalUpRateKB: int64Ptr(1), MaxDownloadsGlobal: intPtr(1),
+	}
+	entries := Entries(full)
+	if len(entries) != len(methodTable) {
+		t.Fatalf("Entries(full) has %d rows, want %d (table)", len(entries), len(methodTable))
+	}
+	for i, e := range entries {
+		if e.Key != methodTable[i].Key {
+			t.Fatalf("entries[%d].Key = %q, want table order %q", i, e.Key, methodTable[i].Key)
+		}
+		if e.Setter != methodTable[i].Setter {
+			t.Fatalf("entries[%d].Setter = %q, want %q", i, e.Setter, methodTable[i].Setter)
 		}
 	}
 }

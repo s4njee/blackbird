@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,16 +16,17 @@ import (
 	"time"
 
 	"blackbird/internal/config"
+	"blackbird/internal/history"
 	"blackbird/internal/rtorrent"
 	"blackbird/internal/tuning"
 )
 
-// ConfigStore persists settings: the Settings UI saves through it. SaveTuning
-// writes the whole YAML atomically (temp + rename) and swaps the in-memory
-// config; comments are not preserved (documented in example.yml).
+// ConfigStore persists settings: the Settings UI saves through it.
+// SaveSettings writes the whole YAML atomically (temp + rename) and swaps
+// the in-memory config; comments are not preserved (documented in
+// example.yml).
 type ConfigStore interface {
 	Get() config.Config
-	SaveTuning(t config.Tuning) error
 	SaveSettings(c config.Config) error
 	ConfigPath() string
 	DownloadDirs() []string
@@ -135,8 +137,28 @@ func (s *Server) statsHandler(w http.ResponseWriter, r *http.Request) {
 
 // ---- GET /api/torrents/{hash} ----
 
+// detailHandler serves the focused-torrent views. The default response is the
+// full Detail (files/peers/trackers/transfer). A ?view= query selects a
+// lighter single-tab payload: general, logger, speed, or explanation. (These share the
+// /api/torrents/{hash} route because Go's ServeMux cannot host both a
+// {hash} wildcard and literal sub-routes like move/{id} without ambiguity.)
 func (s *Server) detailHandler(w http.ResponseWriter, r *http.Request) {
-	d, err := s.opts.RTorrent.FetchDetail(r.Context(), r.PathValue("hash"))
+	hash := r.PathValue("hash")
+	switch r.URL.Query().Get("view") {
+	case "explanation":
+		s.explanationHandler(w, r)
+		return
+	case "general":
+		s.generalHandler(w, r, hash)
+		return
+	case "logger":
+		s.loggerHandler(w, r, hash)
+		return
+	case "speed":
+		s.speedHandler(w, r, hash)
+		return
+	}
+	d, err := s.opts.RTorrent.FetchDetail(r.Context(), hash)
 	if err != nil {
 		status, code, msg := errorFor(err)
 		writeAPIError(w, status, code, msg)
@@ -148,7 +170,7 @@ func (s *Server) detailHandler(w http.ResponseWriter, r *http.Request) {
 // ---- POST /api/torrents/action ----
 
 type actionRequest struct {
-	Action       string   `json:"action"` // start|force_start|pause|stop|recheck|remove|remove_with_data|set_label|move_data|priority|superseed|sequential|save_session|set_custom|file_priority|tracker_add|tracker_enable|reannounce
+	Action       string   `json:"action"` // start|force_start|pause|stop|recheck|remove|remove_with_data|set_label|move_data|priority|superseed|sequential|save_session|set_custom|file_priority|tracker_add|tracker_enable|reannounce|peer_ban|peer_snub|peer_unsnub|peer_disconnect|set_throttle
 	Hashes       []string `json:"hashes"`
 	Label        string   `json:"label,omitempty"`
 	Priority     *int     `json:"priority,omitempty"`
@@ -160,6 +182,13 @@ type actionRequest struct {
 	Enabled      *bool    `json:"enabled,omitempty"`
 	CustomField  string   `json:"customField,omitempty"`
 	CustomValue  string   `json:"customValue,omitempty"`
+	Name         string   `json:"name,omitempty"` // rename target (d.name.set)
+	// Throttle assigns a named throttle channel (d.throttle_name.set); empty
+	// clears the assignment back to the global limits.
+	Throttle string `json:"throttle,omitempty"`
+	// PeerID targets one peer (p.id) within each hash for peer moderation.
+	// Peer actions act on every hash in Hashes × this one peer.
+	PeerID string `json:"peerId,omitempty"`
 }
 
 type hashResult struct {
@@ -181,6 +210,17 @@ func validCustomField(field string) bool {
 	}
 }
 
+// isPeerAction reports whether an action targets one peer within each hash
+// (peer moderation needs a peerId payload).
+func isPeerAction(action string) bool {
+	switch action {
+	case "peer_ban", "peer_snub", "peer_unsnub", "peer_disconnect":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 	var req actionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -192,7 +232,7 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch req.Action {
-	case "start", "force_start", "pause", "stop", "recheck", "remove", "remove_with_data", "set_label", "priority", "move_data", "superseed", "sequential", "save_session", "set_custom", "file_priority", "tracker_add", "tracker_remove", "tracker_enable", "reannounce":
+	case "start", "force_start", "pause", "stop", "recheck", "remove", "remove_with_data", "set_label", "priority", "move_data", "superseed", "sequential", "save_session", "set_custom", "file_priority", "tracker_add", "tracker_remove", "tracker_enable", "reannounce", "peer_ban", "peer_snub", "peer_unsnub", "peer_disconnect", "rename", "set_throttle":
 	default:
 		writeAPIError(w, http.StatusBadRequest, "bad_request", "unknown action "+req.Action)
 		return
@@ -233,6 +273,14 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "bad_request", "set_custom requires customField custom2-custom5")
 		return
 	}
+	if isPeerAction(req.Action) && strings.TrimSpace(req.PeerID) == "" {
+		writeAPIError(w, http.StatusBadRequest, "bad_request", req.Action+" requires peerId")
+		return
+	}
+	if req.Action == "rename" && strings.TrimSpace(req.Name) == "" {
+		writeAPIError(w, http.StatusBadRequest, "bad_request", "rename requires name")
+		return
+	}
 
 	ctx := r.Context()
 	rtc := s.opts.RTorrent
@@ -241,6 +289,18 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 	// Batch actions are per-hash atomic: every hash is attempted and the
 	// outcome reported individually, so partial failures surface.
 	for _, hash := range req.Hashes {
+		before := map[string]string{}
+		if s.opts.Poller != nil && s.history.Recorder() != nil {
+			snapshot := s.opts.Poller.Snapshot()
+			for _, t := range snapshot.Torrents {
+				if t.Hash == hash {
+					before = history.TorrentValues(t)
+					before["observedAt"] = snapshot.GeneratedAt.Format(time.RFC3339Nano)
+					break
+				}
+			}
+		}
+		intention := s.history.Begin(hash, history.Entry{Kind: history.KindAction, Actor: actorFromRequest(r, s.auth), Action: req.Action, Before: before, After: actionIntentValues(req), Message: "Requested action; before values are from the last cached poll."})
 		var err error
 		switch req.Action {
 		case "start":
@@ -254,10 +314,10 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 		case "recheck":
 			err = rtc.Recheck(ctx, hash)
 		case "remove":
-			err = rtc.Erase(ctx, hash)
+			err = s.guardPreservation(hash, func() error { return rtc.Erase(ctx, hash) })
 		case "remove_with_data":
 			// Refuses base paths outside configured download dirs.
-			_, err = rtc.RemoveWithData(ctx, hash, s.opts.Store.DownloadDirs())
+			err = s.guardPreservation(hash, func() error { _, e := rtc.RemoveWithData(ctx, hash, s.opts.Store.DownloadDirs()); return e })
 		case "set_label":
 			err = rtc.SetLabel(ctx, hash, req.Label)
 		case "priority":
@@ -286,12 +346,43 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 			err = rtc.SetTrackerEnabled(ctx, hash, *req.TrackerIndex, *req.Enabled)
 		case "reannounce":
 			err = rtc.Announce(ctx, hash)
+		case "rename":
+			err = rtc.Rename(ctx, hash, req.Name)
+		case "peer_ban":
+			err = rtc.BanPeer(ctx, hash, req.PeerID)
+		case "peer_snub":
+			err = rtc.SetPeerSnubbed(ctx, hash, req.PeerID, true)
+		case "peer_unsnub":
+			err = rtc.SetPeerSnubbed(ctx, hash, req.PeerID, false)
+		case "peer_disconnect":
+			err = rtc.DisconnectPeer(ctx, hash, req.PeerID)
+		case "set_throttle":
+			err = s.setThrottleName(ctx, hash, req.Throttle)
 		}
 		res := hashResult{Hash: hash, OK: err == nil}
 		if err != nil {
 			res.Error = err.Error()
 		}
 		resp.Results = append(resp.Results, res)
+		// Record the action in the per-torrent log (Logger tab) and the
+		// global History view. Peer actions are logged under the peer's
+		// owning torrent; the action string is the batch verb, and details
+		// carry the target (file/tracker/peer).
+		if s.history != nil {
+			result := "ok"
+			if err != nil {
+				result = "failed"
+			}
+			s.history.Add(hash, history.Entry{
+				CauseID: intention, Phase: "rpc_result",
+				Kind:    history.KindAction,
+				Actor:   actorFromRequest(r, s.auth),
+				Action:  req.Action,
+				Result:  result,
+				Message: res.Error,
+				Name:    s.torrentName(hash),
+			})
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -300,6 +391,36 @@ func (s *Server) actionHandler(w http.ResponseWriter, r *http.Request) {
 // PAR-2.2 move engine. New UI clients use the cancellable job endpoint.
 func (s *Server) moveData(ctx context.Context, hash, destination string) error {
 	return s.moveTorrent(ctx, hash, destination, moveFiles)
+}
+
+// setThrottleName assigns a torrent to a named throttle channel (PAR-4.1).
+// Verified against rTorrent 0.16.18: d.throttle_name.set faults on an active
+// download ("Cannot set throttle on active download"), so running torrents
+// are stopped first and restarted afterwards, mirroring the move engine. An
+// empty name clears the assignment back to the global limits.
+func (s *Server) setThrottleName(ctx context.Context, hash, name string) (err error) {
+	var torrentFound, running bool
+	for _, torrent := range s.opts.Poller.Snapshot().Torrents {
+		if torrent.Hash == hash {
+			torrentFound = true
+			running = torrent.State != rtorrent.StateStopped
+			break
+		}
+	}
+	if !torrentFound {
+		return fmt.Errorf("torrent %s is not in the current session", hash)
+	}
+	if running {
+		if err := s.opts.RTorrent.Stop(ctx, hash); err != nil {
+			return fmt.Errorf("stop torrent before throttle change: %w", err)
+		}
+		defer func() {
+			if startErr := s.opts.RTorrent.Start(context.Background(), hash); startErr != nil && err == nil {
+				err = fmt.Errorf("throttle assigned but restart failed: %w", startErr)
+			}
+		}()
+	}
+	return s.opts.RTorrent.SetThrottleName(ctx, hash, name)
 }
 
 // ---- POST /api/torrents/add ----
@@ -367,6 +488,14 @@ func (s *Server) addHandler(w http.ResponseWriter, r *http.Request) {
 				results = append(results, addItemResult{Source: uri, OK: false, Error: err.Error()})
 				continue
 			}
+			// Magnets carry no local metadata; key the add by the btih
+			// hash when present so it still lands in the history.
+			if s.history != nil {
+				s.history.Add(magnetHash(uri), history.Entry{
+					Kind: history.KindAdd, Actor: actorFromRequest(r, s.auth), Action: "add",
+					Result: "ok", Message: uri,
+				})
+			}
 			results = append(results, addItemResult{Source: uri, OK: true})
 		}
 	}
@@ -390,6 +519,15 @@ func (s *Server) addHandler(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					results = append(results, addItemResult{Source: name, OK: false, Error: err.Error()})
 					continue
+				}
+				// Capture .torrent metadata (comment, created-by, creation date)
+				// keyed by infohash for the General tab, and log the add.
+				if hash, meta := metaFromBytes(data); hash != "" {
+					s.meta.put(hash, meta)
+					s.history.Add(hash, history.Entry{
+						Kind: history.KindAdd, Actor: actorFromRequest(r, s.auth), Action: "add",
+						Result: "ok", Message: name, Name: name,
+					})
 				}
 				if err := s.opts.RTorrent.AddTorrentFile(r.Context(), data, opts); err != nil {
 					results = append(results, addItemResult{Source: name, OK: false, Error: err.Error()})
@@ -426,28 +564,48 @@ func validateMagnetOrURL(uri string) error {
 // ---- GET /api/settings ----
 
 type settingsResponse struct {
-	Tuning      config.Tuning      `json:"tuning"`
-	Daemon      map[string]string  `json:"daemon"` // rtorrent key → live value
-	Directories config.Directories `json:"directories"`
-	Labels      []config.Label     `json:"labels"`
-	UI          config.UI          `json:"ui"`
+	Tuning       config.Tuning      `json:"tuning"`
+	Daemon       map[string]string  `json:"daemon"` // rtorrent key → live value
+	History      config.History     `json:"history"`
+	Stats        config.Stats       `json:"stats"`
+	PortCheck    config.PortCheck   `json:"portcheck"`
+	Network      config.Network     `json:"network"`
+	Capabilities capabilities       `json:"capabilities"`
+	Directories  config.Directories `json:"directories"`
+	Automation   config.Automation  `json:"automation"`
+	Seeding      config.Seeding     `json:"seeding"`
+	Schedule     config.Schedule    `json:"schedule"`
+	Labels       []config.Label     `json:"labels"`
+	UI           config.UI          `json:"ui"`
 }
 
 func (s *Server) settingsGetHandler(w http.ResponseWriter, r *http.Request) {
 	cfg := s.opts.Store.Get()
 	resp := settingsResponse{
-		Tuning:      cfg.Tuning,
-		Daemon:      map[string]string{},
-		Directories: cfg.Directories,
-		Labels:      cfg.Labels,
-		UI:          cfg.UI,
+		Tuning:       cfg.Tuning,
+		Daemon:       map[string]string{},
+		History:      cfg.History,
+		Stats:        cfg.Stats,
+		PortCheck:    cfg.PortCheck,
+		Network:      cfg.Network,
+		Capabilities: s.probeCapabilities(r),
+		Directories:  cfg.Directories,
+		Automation:   redactAutomation(cfg.Automation),
+		Seeding:      cfg.Seeding,
+		Schedule:     cfg.Schedule,
+		Labels:       cfg.Labels,
+		UI:           cfg.UI,
 	}
 
 	// Live daemon values for every tuning key, batched in one multicall.
-	getters := tuning.GetterMethods()
+	// Iterated in stable table order (POL-8.8) so the request is deterministic.
 	var reqs []rtorrent.Request
 	var order []string
-	for key, getter := range getters {
+	for _, key := range tuning.Keys() {
+		getter, ok := tuning.GetterFor(key)
+		if !ok {
+			continue
+		}
 		reqs = append(reqs, rtorrent.Request{Method: getter})
 		order = append(order, key)
 	}
@@ -471,8 +629,15 @@ func (s *Server) settingsGetHandler(w http.ResponseWriter, r *http.Request) {
 // ---- POST /api/settings ----
 
 type settingsSaveRequest struct {
-	Tuning      config.Tuning       `json:"tuning"`
+	Tuning      *config.Tuning      `json:"tuning,omitempty"`
+	History     *config.History     `json:"history,omitempty"`
+	Stats       *config.Stats       `json:"stats,omitempty"`
+	PortCheck   *config.PortCheck   `json:"portcheck,omitempty"`
+	Network     *config.Network     `json:"network,omitempty"`
 	Directories *config.Directories `json:"directories,omitempty"`
+	Automation  *config.Automation  `json:"automation,omitempty"`
+	Seeding     *config.Seeding     `json:"seeding,omitempty"`
+	Schedule    *config.Schedule    `json:"schedule,omitempty"`
 	Labels      *[]config.Label     `json:"labels,omitempty"`
 	UI          *config.UI          `json:"ui,omitempty"`
 }
@@ -498,9 +663,44 @@ func (s *Server) settingsSaveHandler(w http.ResponseWriter, r *http.Request) {
 	current := s.opts.Store.Get()
 	// Validate every editable YAML-backed section in a full-config context.
 	changed := current
-	changed.Tuning = req.Tuning
+	// An omitted "tuning" section leaves the persisted tuning alone. It used
+	// to be assigned unconditionally from a value type, so any partial body
+	// (e.g. {"ui":{...}}) silently zeroed every tuning key on disk — and
+	// because the resulting diff was empty the daemon kept running the old
+	// values, hiding the loss until the next restart.
+	if req.Tuning != nil {
+		changed.Tuning = *req.Tuning
+		// A missing throttles list leaves daemon channels untouched; an
+		// explicit (even empty) list replaces them.
+		if req.Tuning.Throttles == nil {
+			changed.Tuning.Throttles = current.Tuning.Throttles
+		}
+	}
+	if req.History != nil {
+		changed.History = *req.History
+	}
+	if req.Stats != nil {
+		changed.Stats = *req.Stats
+	}
+	if req.PortCheck != nil {
+		changed.PortCheck = *req.PortCheck
+	}
+	if req.Network != nil {
+		changed.Network = *req.Network
+	}
 	if req.Directories != nil {
 		changed.Directories = *req.Directories
+	}
+	if req.Automation != nil {
+		changed.Automation = *req.Automation
+		// Masked secrets keep their stored values; see secretMask.
+		restoreRSSSecrets(&changed.Automation, current.Automation)
+	}
+	if req.Seeding != nil {
+		changed.Seeding = *req.Seeding
+	}
+	if req.Schedule != nil {
+		changed.Schedule = *req.Schedule
 	}
 	if req.Labels != nil {
 		changed.Labels = *req.Labels
@@ -517,15 +717,79 @@ func (s *Server) settingsSaveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	intention := s.history.Begin("", history.Entry{Actor: actorFromRequest(r, s.auth), Action: "settings_save", Before: history.ConfigValues(current), After: history.ConfigValues(changed), Message: "Requested settings change; not yet applied or saved."})
+	settingsRecorded := false
+	defer func() {
+		if !settingsRecorded && s.history.Recorder() != nil {
+			s.history.Recorder().Record("", history.Entry{Phase: "rpc_result", Actor: actorFromRequest(r, s.auth), Action: "settings_save", CauseID: intention, Result: "failed", Message: "Settings request ended before save; some daemon operations may have occurred."})
+		}
+	}()
 	// Apply only changed keys to the live daemon; per-key outcomes reported.
-	diff := tuning.Diff(current.Tuning, req.Tuning)
+	diff := tuning.Diff(current.Tuning, changed.Tuning)
 	results := tuning.ApplySequential(r.Context(), s.opts.RTorrent, diff)
 	if changed.Directories.Default != current.Directories.Default && changed.Directories.Default != "" {
 		results = append(results, tuning.Result{Key: "directory.default", Err: s.opts.RTorrent.SetDefaultDirectory(r.Context(), changed.Directories.Default)})
 	}
 
+	// Named throttle channels: upsert creations/updates, refuse removals
+	// still referenced by the session (nothing is persisted on refusal).
+	upsert, removed := tuning.ChannelDiff(current.Tuning.Throttles, changed.Tuning.Throttles)
+	if len(upsert) > 0 || len(removed) > 0 {
+		inUse := map[string]int{}
+		if s.opts.Poller != nil {
+			inUse = tuning.InUse(s.opts.Poller.Snapshot().Torrents)
+		}
+		for _, name := range removed {
+			if n := inUse[name]; n > 0 {
+				writeAPIError(w, http.StatusBadRequest, "throttle_in_use", fmt.Sprintf("throttle channel %q is still used by %d torrent(s); unassign them first", name, n))
+				return
+			}
+		}
+		for _, cr := range tuning.ApplyChannels(r.Context(), s.opts.RTorrent, upsert, removed, inUse) {
+			item := tuning.Result{Key: cr.Name, Err: cr.Err}
+			results = append(results, item)
+		}
+	}
+
 	// Persist the whole YAML atomically and swap the in-memory config.
 	err := s.opts.Store.SaveSettings(changed)
+	if err == nil {
+		s.history.RecordConfig(changed, actorFromRequest(r, s.auth), intention)
+	}
+	if recorder := s.history.Recorder(); recorder != nil {
+		outcomes := map[string]string{}
+		for _, result := range results {
+			if result.Err != nil {
+				outcomes[result.Key] = "failed"
+			} else {
+				outcomes[result.Key] = "ok"
+			}
+		}
+		result := "saved"
+		if err != nil {
+			result = "save_failed"
+		}
+		recorder.Record("", history.Entry{Phase: "rpc_result", Actor: actorFromRequest(r, s.auth), Action: "settings_save", CauseID: intention, Result: result, After: outcomes, Message: "Per-key daemon request outcomes; successful save does not mean every daemon setting applied."})
+	}
+	settingsRecorded = true
+	// A changed blocklist source reloads immediately (the refresh loop
+	// would otherwise pick it up on its next tick).
+	networkChanged := changed.Network != current.Network
+	if err == nil && networkChanged && s.opts.IPFilter != nil && changed.Network.IPFilter.Enabled() {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			_ = s.opts.IPFilter.ApplyNow(ctx)
+		}()
+	}
+	// Retention edits apply to the live tracker without a restart.
+	if err == nil && s.opts.Traffic != nil {
+		s.opts.Traffic.SetRetentionDays(changed.Stats.EffectiveTrafficDays())
+	}
+	// History bounds apply to the live log without a restart.
+	if err == nil && s.history != nil {
+		s.history.SetBounds(changed.History.ActionLogEntries, changed.History.ActionLogRetention, changed.History.EffectiveGlobalEntries())
+	}
 	uiResults := make([]settingsApplyResult, 0, len(results))
 	for _, result := range results {
 		item := settingsApplyResult{Key: result.Key}
@@ -552,6 +816,14 @@ type settingsExecuteRequest struct {
 // hatch. It accepts only a method identifier and string arguments, and logs
 // the method name (never values) for operator auditability.
 func (s *Server) settingsExecuteHandler(w http.ResponseWriter, r *http.Request) {
+	// Opt-in per deployment: this reaches the daemon's whole command
+	// surface, which is a categorically different power from the tuning
+	// keys the Advanced tab exists to edit.
+	if s.opts.Store == nil || !s.opts.Store.Get().Server.AllowExecute {
+		writeAPIError(w, http.StatusForbidden, "execute_disabled",
+			"raw XML-RPC is disabled; set server.allow_execute: true to enable it")
+		return
+	}
 	var req settingsExecuteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeAPIError(w, http.StatusBadRequest, "bad_request", "invalid JSON body: "+err.Error())
@@ -561,6 +833,12 @@ func (s *Server) settingsExecuteHandler(w http.ResponseWriter, r *http.Request) 
 		writeAPIError(w, http.StatusBadRequest, "bad_request", "method must contain only letters, numbers, dots, and underscores")
 		return
 	}
+	if deniedRPCMethod(req.Method) {
+		slog.Warn("operator XML-RPC method refused", "method", req.Method)
+		writeAPIError(w, http.StatusForbidden, "method_denied",
+			"this method runs external programs or rewrites the daemon's command table and is never allowed here")
+		return
+	}
 	slog.Info("operator XML-RPC method executed", "method", req.Method)
 	if err := s.opts.RTorrent.Execute(r.Context(), req.Method, req.Params...); err != nil {
 		status, code, msg := errorFor(err)
@@ -568,6 +846,32 @@ func (s *Server) settingsExecuteHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// deniedRPCMethodPrefixes are XML-RPC families that run external programs
+// or rewrite the daemon's own command table. They stay blocked even when
+// server.allow_execute is on: the escape hatch exists to reach daemon
+// settings, and "execute2" is a shell, not a setting. Blocking them means a
+// future hole in the surrounding auth or origin checks cannot escalate to
+// running commands on the daemon host.
+var deniedRPCMethodPrefixes = []string{
+	"execute",              // execute, execute2, execute.throw, execute.capture, ...
+	"system.method.set",    // redefines an existing command
+	"system.method.insert", // defines a new one, which may wrap execute
+	"import",               // sources an arbitrary rc file
+	"try_import",
+	"schedule", // schedule/schedule2 can run the above on a timer
+}
+
+// deniedRPCMethod reports whether a method name falls in a blocked family.
+func deniedRPCMethod(method string) bool {
+	lower := strings.ToLower(method)
+	for _, prefix := range deniedRPCMethodPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- small formatting helpers ----

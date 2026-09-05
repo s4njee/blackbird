@@ -6,27 +6,48 @@ services:
       context: .
       dockerfile: deploy/docker/rtorrent/Dockerfile
       args:
-        RTORRENT_VERSION: "${RTORRENT_VERSION:-0.16.18}"
-        LIBTORRENT_VERSION: "${LIBTORRENT_VERSION:-0.16.18}"
-    image: blackbird/rtorrent:${RTORRENT_VERSION:-0.16.18}
-    user: "${PUID:-1000}:${PGID:-1000}"
+        RTORRENT_VERSION: "${RTORRENT_VERSION:-0.15.7}"
+        LIBTORRENT_VERSION: "${LIBTORRENT_VERSION:-0.15.7}"
+    image: blackbird/rtorrent:${RTORRENT_VERSION:-0.15.7}
     environment:
-      # Fixed, host-published BitTorrent listen port. Override this value in
-      # deploy/.env (and forward it in your router/firewall) when needed.
+      # The container starts as root, fixes ownership of any mount point
+      # Docker auto-created, then runs rTorrent as this user. Defaults suit a
+      # single-user Linux box; set PUID/PGID in a root-level .env to match
+      # `id -u`/`id -g` if yours differ, so downloads end up owned by you.
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      # Fixed, host-published BitTorrent listen port. Override in a
+      # root-level .env (and forward it in your router/firewall) when needed.
       RTORRENT_P2P_PORT: "${RTORRENT_P2P_PORT:-47111}"
     restart: unless-stopped
+    # Every tracker announce and every peer connection is a file descriptor.
+    # A large session announcing at once exhausts the common 1024/2048 host
+    # default, and rTorrent turns that into a fatal resource_error out of its
+    # poll thread ("Listener port accept() failed: Too many open files")
+    # rather than degrading, so the daemon aborts. Blackbird also ramps
+    # announces gradually (see trackers.* in config) — this raises the
+    # ceiling, the ramp keeps the session well under it.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     networks: [blackbird, egress]
     volumes:
-      # Keep completed and in-progress torrent data directly on the host.
-      # `${HOME}` resolves to the user running `docker compose`.
+      # Torrent data lives directly on the host. Change the location with
+      # BLACKBIRD_DOWNLOAD_DIR in a root-level .env (or edit the default
+      # here); the same variable drives Blackbird's mount below, and the two
+      # MUST match — rTorrent stores absolute download paths in its session
+      # and Blackbird passes them through unchanged.
       - type: bind
-        source: ${HOME}/Downloads/torrents
-        # This path must match Blackbird's mount: rTorrent stores absolute
-        # download paths in its session, and Blackbird passes destinations
-        # through unchanged.
+        source: ${BLACKBIRD_DOWNLOAD_DIR:-${HOME}/Downloads/torrents}
         target: /downloads
       - rtorrent_watch:/data/watch
-      - rtorrent_session:/data/session
+      # Session state defaults to a .session directory inside the download
+      # folder, so one host directory holds everything and `docker compose
+      # down --volumes` cannot destroy it. Override with RTORRENT_SESSION_DIR.
+      - type: bind
+        source: ${RTORRENT_SESSION_DIR:-${BLACKBIRD_DOWNLOAD_DIR:-${HOME}/Downloads/torrents}/.session}
+        target: /data/session
     healthcheck:
       test: ["CMD", "/usr/local/bin/rtorrent-healthcheck"]
       interval: 10s
@@ -46,11 +67,21 @@ services:
         COMMIT: "${BLACKBIRD_COMMIT:-none}"
         BUILD_DATE: "${BLACKBIRD_BUILD_DATE:-unknown}"
     image: blackbird/blackbird:${BLACKBIRD_VERSION:-dev}
+    environment:
+      # Same user as rTorrent: both containers write into the shared
+      # downloads mount, and a mismatch leaves Blackbird unable to move,
+      # unpack, or delete data that rTorrent owns.
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      # Only so the startup banner can print the right URL.
+      BLACKBIRD_HTTP_PORT: "${BLACKBIRD_HTTP_PORT:-8223}"
     env_file:
+      # Optional: only present if deploy/bootstrap.sh generated the hash on
+      # the host. bootstrap escapes bcrypt's `$` as `$$` so Compose's normal
+      # interpolation delivers the hash intact. (`format: raw` would pass the
+      # `$$` through literally and corrupt it, and needs Compose >= 2.30.)
       - path: "${BLACKBIRD_ENV_FILE:-./deploy/.env}"
         required: false
-        # Bcrypt hashes contain `$`; do not let Compose interpolate them.
-        format: raw
     command: ["-config", "/config/config.yml"]
     restart: unless-stopped
     depends_on:
@@ -64,12 +95,21 @@ services:
       - "${BLACKBIRD_HTTP_PORT:-8223}:8222"
     volumes:
       - blackbird_config:/config
-      # This must be the same host directory rTorrent uses above so
-      # Blackbird can browse and report on downloaded files.
+      # Same host directory rTorrent uses above (same variable, so they
+      # cannot drift) — Blackbird browses, moves, and unpacks the files
+      # rTorrent writes.
       - type: bind
-        source: ${HOME}/Downloads/torrents
+        source: ${BLACKBIRD_DOWNLOAD_DIR:-${HOME}/Downloads/torrents}
         target: /downloads
       - rtorrent_watch:/watch
+      # Share rTorrent's session directory so Blackbird can read each
+      # torrent's session .torrent file and backfill comment/created-by
+      # metadata for torrents that predate Blackbird (PAR-2.5). Read-only:
+      # rTorrent owns this directory.
+      - type: bind
+        source: ${RTORRENT_SESSION_DIR:-${BLACKBIRD_DOWNLOAD_DIR:-${HOME}/Downloads/torrents}/.session}
+        target: /data/session
+        read_only: true
 
 networks:
   # rTorrent and Blackbird share only this internal network for SCGI traffic.
@@ -85,4 +125,3 @@ networks:
 volumes:
   blackbird_config:
   rtorrent_watch:
-  rtorrent_session:

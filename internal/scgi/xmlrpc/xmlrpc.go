@@ -222,6 +222,22 @@ func DecodeRequest(data []byte) (method string, params []Value, err error) {
 // UnmarshalXML implements xml.Unmarshaler for <value>, accepting both the
 // inline form (<value>text</value>) and typed children.
 func (v *Value) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	return v.unmarshalDepth(d, start, 0)
+}
+
+// maxValueDepth bounds <value> nesting. The parser below walks the token
+// stream itself rather than going through Decoder.unmarshal, so
+// encoding/xml's own recursion guard never engages: without this limit a
+// response of nothing but repeated "<value><array><data>" open tags
+// recurses until the goroutine stack overflows, which is a runtime throw
+// that recover() cannot catch and so takes the whole process down. The
+// response byte cap does not help — the crash fits well inside it.
+const maxValueDepth = 100
+
+func (v *Value) unmarshalDepth(d *xml.Decoder, start xml.StartElement, depth int) error {
+	if depth > maxValueDepth {
+		return fmt.Errorf("xml-rpc: value nesting deeper than %d levels", maxValueDepth)
+	}
 	for {
 		tok, err := d.Token()
 		if err != nil {
@@ -234,7 +250,7 @@ func (v *Value) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 			}
 			*v = Value{Type: "string", Str: string(t)}
 		case xml.StartElement:
-			val, err := parseTyped(d, t)
+			val, err := parseTyped(d, t, depth)
 			if err != nil {
 				return err
 			}
@@ -251,7 +267,7 @@ func (v *Value) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 
 // parseTyped decodes a typed value element whose StartElement has already
 // been read; it consumes through the element's EndElement.
-func parseTyped(d *xml.Decoder, se xml.StartElement) (Value, error) {
+func parseTyped(d *xml.Decoder, se xml.StartElement, depth int) (Value, error) {
 	switch se.Name.Local {
 	case "string":
 		s, err := readChars(d)
@@ -301,15 +317,15 @@ func parseTyped(d *xml.Decoder, se xml.StartElement) (Value, error) {
 		}
 		return Value{Type: "nil"}, nil
 	case "array":
-		return parseArray(d)
+		return parseArray(d, depth)
 	case "struct":
-		return parseStruct(d)
+		return parseStruct(d, depth)
 	default:
 		return Value{}, fmt.Errorf("xml-rpc: unsupported value type <%s>", se.Name.Local)
 	}
 }
 
-func parseArray(d *xml.Decoder) (Value, error) {
+func parseArray(d *xml.Decoder, depth int) (Value, error) {
 	out := Value{Type: "array"}
 	inData := false
 	for {
@@ -327,7 +343,7 @@ func parseArray(d *xml.Decoder) (Value, error) {
 					return Value{}, fmt.Errorf("xml-rpc: <value> outside <data> in array")
 				}
 				var v Value
-				if err := v.UnmarshalXML(d, t); err != nil {
+				if err := v.unmarshalDepth(d, t, depth+1); err != nil {
 					return Value{}, err
 				}
 				out.Array = append(out.Array, v)
@@ -347,7 +363,7 @@ func parseArray(d *xml.Decoder) (Value, error) {
 	}
 }
 
-func parseStruct(d *xml.Decoder) (Value, error) {
+func parseStruct(d *xml.Decoder, depth int) (Value, error) {
 	out := Value{Type: "struct"}
 	var cur *Member
 	for {
@@ -373,7 +389,7 @@ func parseStruct(d *xml.Decoder) (Value, error) {
 				if cur == nil {
 					return Value{}, fmt.Errorf("xml-rpc: <value> outside <member>")
 				}
-				if err := cur.Value.UnmarshalXML(d, t); err != nil {
+				if err := cur.Value.unmarshalDepth(d, t, depth+1); err != nil {
 					return Value{}, err
 				}
 			default:

@@ -70,7 +70,7 @@ for _ in $(seq 1 90); do
 		blackbird_status=$(docker inspect -f '{{.State.Status}}' "$blackbird_id" 2>/dev/null || true)
 		rtorrent_version=$(docker exec "$rtorrent_id" rtorrent -h 2>/dev/null | head -1 || true)
 		if [ "$rtorrent_health" = healthy ] && [ "$blackbird_status" = running ] \
-			&& printf '%s' "$rtorrent_version" | grep -q '0.16.18' \
+			&& printf '%s' "$rtorrent_version" | grep -q '0.15.7' \
 			&& docker exec "$rtorrent_id" test -d /data/session \
 			&& docker exec "$rtorrent_id" sh -c 'find /data/session -type f -print -quit | grep -q .' \
 			&& docker exec "$blackbird_id" wget -qO- http://127.0.0.1:8222/healthz | grep -q '"ok":true'; then

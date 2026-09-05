@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/stylelint",
+  "ignoreFiles": [
+    "src/styles/palette.css",
+    "src/styles/themes/**/*.css",
+    "src/styles/app/print.css",
+    "dist/**/*.css"
+  ],
+  "rules": {
+    "color-no-hex": true,
+    "function-disallowed-list": [
+      "rgb",
+      "rgba",
+      "hsl",
+      "hsla",
+      "hwb",
+      "lab",
+      "lch",
+      "oklch",
+      "oklab"
+    ]
+  }
+}

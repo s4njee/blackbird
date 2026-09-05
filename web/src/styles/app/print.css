@@ -1,0 +1,45 @@
+/* Print (THM-9.5): History and Stats render as readable documents. App
+ * chrome (top bar, sidebar, toolbar, detail, status bar) is hidden; the
+ * views expand full-width with ink-friendly contrast. */
+@media print {
+  .topbar,
+  .sidebar,
+  .toolbar,
+  .detail-panel,
+  .statusbar,
+  .table-drop-hint,
+  .settings-nav,
+  .settings-footer,
+  .rss-header-actions,
+  .history-header-actions,
+  .traffic-export {
+    display: none !important;
+  }
+
+  .app-window,
+  .stats-view,
+  .history-view {
+    display: block;
+    height: auto;
+    overflow: visible;
+    background: #ffffff;
+    color: #000000;
+  }
+
+  .stats-view *,
+  .history-view * {
+    color: #000000 !important;
+    border-color: #999999 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    animation: none !important;
+  }
+
+  .stat-card,
+  .storage-panel,
+  .history-row,
+  .traffic-row {
+    break-inside: avoid;
+  }
+}

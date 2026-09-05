@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"blackbird/internal/fakertorrent"
+	"blackbird/internal/poller"
 	"blackbird/internal/rtorrent"
 )
 
@@ -110,8 +111,9 @@ func TestWebSocketSnapshotAndDelta(t *testing.T) {
 	if err := json.Unmarshal(data, &sd); err != nil {
 		t.Fatal(err)
 	}
-	if snap.V != wsVersion {
-		t.Fatalf("snapshot version = %d", snap.V)
+	// Default clients (no hello) stay on v1: byte-compatible envelopes.
+	if snap.V != wsVersionMin {
+		t.Fatalf("snapshot version = %d, want v1", snap.V)
 	}
 	if sd.Status != "connected" || len(sd.Torrents) != 3 || sd.Global.Version != "0.15.4" {
 		t.Fatalf("snapshot = %s", data)
@@ -216,6 +218,51 @@ func TestWebSocketFocusDetailAndHidden(t *testing.T) {
 	t.Fatal("no snapshot on visibility resume")
 }
 
+func TestWebSocketBitfieldDiffed(t *testing.T) {
+	ts, p := newTestAPI(t, "")
+	waitForConnected(t, p)
+
+	ws := dialWS(t, ts.URL, "", "")
+	readMsg(t, ws) // snapshot
+
+	// Focus: a bitfield envelope should arrive (hex of the piece map).
+	if err := ws.WriteJSON(map[string]any{"type": "focus", "hash": "aaaa1111aaaa1111"}); err != nil {
+		t.Fatal(err)
+	}
+	var first wsEnvelope
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		env := readMsg(t, ws)
+		if env.Type == "bitfield" {
+			first = env
+			break
+		}
+	}
+	if first.Hash != "aaaa1111aaaa1111" {
+		t.Fatalf("bitfield hash = %q", first.Hash)
+	}
+	data, _ := json.Marshal(first.Data)
+	var bf struct {
+		Hex string `json:"hex"`
+	}
+	if err := json.Unmarshal(data, &bf); err != nil {
+		t.Fatal(err)
+	}
+	if len(bf.Hex) == 0 || len(bf.Hex)%2 != 0 {
+		t.Fatalf("bitfield hex = %q", bf.Hex)
+	}
+
+	// The fake daemon's bitfield is static, so no further bitfield envelope
+	// should arrive while still focused (deltas continue to flow).
+	windowEnd := time.Now().Add(1200 * time.Millisecond)
+	for time.Now().Before(windowEnd) {
+		env := readMsg(t, ws)
+		if env.Type == "bitfield" {
+			t.Fatal("unchanged bitfield was re-sent")
+		}
+	}
+}
+
 func TestWebSocketPingPong(t *testing.T) {
 	ts, _ := newTestAPI(t, "")
 	ws := dialWS(t, ts.URL, "", "")
@@ -224,8 +271,8 @@ func TestWebSocketPingPong(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := readUntilType(t, ws, 3*time.Second, "pong")
-	if env.V != wsVersion {
-		t.Fatalf("pong version = %d", env.V)
+	if env.V != wsVersionMin {
+		t.Fatalf("pong version = %d, want v1", env.V)
 	}
 }
 
@@ -298,8 +345,8 @@ func TestWebSocketConnectionStatusTransitions(t *testing.T) {
 
 	ws := dialWS(t, st.ts.URL, "", "")
 	env := readUntilType(t, ws, 3*time.Second, "snapshot")
-	if env.V != wsVersion {
-		t.Fatalf("snapshot version = %d", env.V)
+	if env.V != wsVersionMin {
+		t.Fatalf("snapshot version = %d, want v1", env.V)
 	}
 	data, _ := json.Marshal(env.Data)
 	var snap struct {
@@ -357,5 +404,337 @@ func TestWebSocketServerCloseDrainsClient(t *testing.T) {
 		if _, _, err := ws.ReadMessage(); err != nil {
 			return // clean close / network error — no hang, no server panic
 		}
+	}
+}
+
+// readDeltaWhere consumes envelopes until a delta satisfies pred.
+func readDeltaWhere(t *testing.T, ws *websocket.Conn, timeout time.Duration, pred func(map[string]any) bool) (wsEnvelope, map[string]any) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		env := readMsg(t, ws)
+		if env.Type != "delta" {
+			continue
+		}
+		data, _ := json.Marshal(env.Data)
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatal(err)
+		}
+		if pred(m) {
+			return env, m
+		}
+	}
+	t.Fatal("no matching delta received")
+	return wsEnvelope{}, nil
+}
+
+func hasKey(m map[string]any, key string) bool {
+	_, ok := m[key]
+	return ok
+}
+
+// assignThrottle drives one single-field change through the fake daemon: the
+// throttle column flips "" → name on the next list poll.
+func assignThrottle(t *testing.T, url, hash, channel string) {
+	t.Helper()
+	resp, _ := postJSON(t, url+"/api/torrents/action", map[string]any{
+		"action": "set_throttle", "hashes": []string{hash}, "throttle": channel,
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("set_throttle status = %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+// TestWebSocketV2HelloPatches proves the v2 wire: after hello, deltas carry
+// changedPatches (not wholes), omit unchanged globals, and send aggregate
+// patches. Steady-state ticks shrink to roughly the timestamp alone.
+func TestWebSocketV2HelloPatches(t *testing.T) {
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+
+	ws := dialWS(t, st.ts.URL, "", "")
+	snap := readUntilType(t, ws, 3*time.Second, "snapshot")
+	if snap.V != wsVersionMin {
+		t.Fatalf("pre-hello snapshot version = %d, want v1", snap.V)
+	}
+	if err := ws.WriteJSON(map[string]any{"type": "hello", "version": 2}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Steady state against the static fake daemon: v2 deltas omit the
+	// unchanged global (the first post-hello flush may still carry it if it
+	// raced the hello, so loop until a filtered tick arrives).
+	env, _ := readDeltaWhere(t, ws, 5*time.Second, func(m map[string]any) bool {
+		return !hasKey(m, "global") && !hasKey(m, "aggregates")
+	})
+	if env.V != wsVersion {
+		t.Fatalf("v2 delta version = %d", env.V)
+	}
+
+	assignThrottle(t, st.ts.URL, "aaaa1111aaaa1111", "bulk")
+
+	env, m := readDeltaWhere(t, ws, 5*time.Second, func(m map[string]any) bool {
+		patches, ok := m["changedPatches"].([]any)
+		if !ok {
+			return false
+		}
+		for _, p := range patches {
+			pm, _ := p.(map[string]any)
+			if pm["hash"] == "aaaa1111aaaa1111" {
+				return true
+			}
+		}
+		return false
+	})
+	if env.V != wsVersion {
+		t.Fatalf("v2 delta version = %d", env.V)
+	}
+	if hasKey(m, "changed") {
+		t.Fatalf("v2 delta carries whole changed rows: %v", m)
+	}
+	if hasKey(m, "aggregates") {
+		t.Fatalf("v2 delta carries full aggregates: %v", m)
+	}
+	patches := m["changedPatches"].([]any)
+	if len(patches) != 1 {
+		t.Fatalf("changedPatches = %v", patches)
+	}
+	pm := patches[0].(map[string]any)
+	fields, _ := pm["fields"].(map[string]any)
+	if len(fields) != 1 || fields["throttle"] != "bulk" {
+		t.Fatalf("patch fields = %v, want exactly {throttle:bulk}", fields)
+	}
+	ap, ok := m["aggregatesPatch"].(map[string]any)
+	if !ok {
+		t.Fatalf("aggregatesPatch missing: %v", m)
+	}
+	throttles, _ := ap["throttles"].(map[string]any)
+	updated, _ := throttles["updated"].(map[string]any)
+	if updated["bulk"] != float64(1) {
+		t.Fatalf("aggregatesPatch = %v", ap)
+	}
+}
+
+// TestWebSocketV1Compat proves clients without hello keep receiving
+// byte-compatible v1 deltas: whole changed rows, global on every tick, full
+// aggregates, and no v2-only keys.
+func TestWebSocketV1Compat(t *testing.T) {
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+
+	ws := dialWS(t, st.ts.URL, "", "")
+	readUntilType(t, ws, 3*time.Second, "snapshot")
+
+	assignThrottle(t, st.ts.URL, "aaaa1111aaaa1111", "bulk")
+
+	env, m := readDeltaWhere(t, ws, 5*time.Second, func(m map[string]any) bool {
+		changed, ok := m["changed"].([]any)
+		if !ok {
+			return false
+		}
+		for _, c := range changed {
+			cm, _ := c.(map[string]any)
+			if cm["hash"] == "aaaa1111aaaa1111" && cm["throttle"] == "bulk" {
+				return true
+			}
+		}
+		return false
+	})
+	if env.V != wsVersionMin {
+		t.Fatalf("v1 delta version = %d", env.V)
+	}
+	if hasKey(m, "changedPatches") || hasKey(m, "aggregatesPatch") {
+		t.Fatalf("v1 delta carries v2 keys: %v", m)
+	}
+	if !hasKey(m, "global") || !hasKey(m, "aggregates") {
+		t.Fatalf("v1 delta dropped always-on keys: %v", m)
+	}
+}
+
+// TestHubBroadcastNoticeDelivers proves the POL-8.3 notice envelope reaches
+// connected clients with its kind intact (no network round trip).
+func TestHubBroadcastNoticeDelivers(t *testing.T) {
+	h := &hub{clients: map[*wsClient]bool{}}
+	c := &wsClient{send: make(chan []byte, sendBuffer), deltaPing: make(chan struct{}, 1), version: wsVersion}
+	h.clients[c] = true
+	h.broadcastNotice(Notice{Kind: "completed", Hash: "abc", Title: "x.iso"})
+	select {
+	case raw := <-c.send:
+		var env wsEnvelope
+		if err := json.Unmarshal(raw, &env); err != nil {
+			t.Fatal(err)
+		}
+		if env.Type != "notice" || env.V != wsVersion {
+			t.Fatalf("envelope = %+v", env)
+		}
+		data, _ := json.Marshal(env.Data)
+		var got Notice
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Kind != "completed" || got.Hash != "abc" || got.Title != "x.iso" {
+			t.Fatalf("notice = %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no notice delivered")
+	}
+}
+
+// TestHubCoalescingMergesLatestWins proves slow-client convergence without
+// network: ticks merged into dirty pending state collapse latest-wins, the
+// metric counts them, removal wins over queued adds, and both wire
+// encodings render from the same merged state.
+func TestHubCoalescingMergesLatestWins(t *testing.T) {
+	h := &hub{clients: map[*wsClient]bool{}}
+	c := &wsClient{send: make(chan []byte, sendBuffer), deltaPing: make(chan struct{}, 1), version: wsVersionMin}
+	h.clients[c] = true
+	now := time.Now()
+
+	g1 := rtorrent.GlobalStats{DownRate: 1}
+	h.broadcastDelta(poller.Delta{
+		Added:  []rtorrent.Torrent{{Hash: "a", Name: "A"}, {Hash: "b", Name: "B"}},
+		Global: &g1, At: now,
+	})
+	if h.Coalesced() != 0 {
+		t.Fatalf("coalesced = %d, want 0 (first tick arms the flush)", h.Coalesced())
+	}
+	select {
+	case <-c.deltaPing:
+	default:
+		t.Fatal("no flush signaled for the first tick")
+	}
+	// Second tick before any flush: change a, remove b (wins over the queued
+	// add), change the global.
+	g2 := rtorrent.GlobalStats{DownRate: 2}
+	h.broadcastDelta(poller.Delta{
+		Changed:        []rtorrent.Torrent{{Hash: "a", Name: "A2"}},
+		ChangedPatches: []poller.TorrentPatch{{Hash: "a", Fields: map[string]any{"name": "A2"}}},
+		Removed:        []string{"b"},
+		Global:         &g2,
+		At:             now.Add(time.Second),
+	})
+	if h.Coalesced() != 1 {
+		t.Fatalf("coalesced = %d, want 1", h.Coalesced())
+	}
+	// No second signal: one flush covers both ticks.
+	select {
+	case <-c.deltaPing:
+		t.Fatal("second flush signaled despite coalescing")
+	default:
+	}
+
+	v1 := c.encodeV1(c.pending)
+	if len(v1.Added) != 1 || v1.Added[0].Name != "A2" {
+		t.Fatalf("v1 added = %+v, want the folded newer whole", v1.Added)
+	}
+	if len(v1.Changed) != 0 {
+		t.Fatalf("v1 changed = %+v, want empty (folded into the add)", v1.Changed)
+	}
+	if len(v1.Removed) != 1 || v1.Removed[0] != "b" {
+		t.Fatalf("v1 removed = %+v", v1.Removed)
+	}
+	if v1.Global == nil || v1.Global.DownRate != 2 {
+		t.Fatalf("v1 global = %+v", v1.Global)
+	}
+
+	v2 := c.encodeV2(c.pending, &g2, poller.DiffAggregates(nil, &poller.Aggregates{
+		Status: map[rtorrent.State]int{rtorrent.StateDownloading: 1},
+	}))
+	if len(v2.Added) != 1 || len(v2.ChangedPatches) != 0 || len(v2.Removed) != 1 {
+		t.Fatalf("v2 = %+v", v2)
+	}
+	if v2.Global == nil || v2.Global.DownRate != 2 {
+		t.Fatalf("v2 global = %+v", v2.Global)
+	}
+}
+
+// TestWebSocketCompressionNegotiated proves the server offers
+// permessage-deflate (PERF-6.2) to clients that ask for it.
+func TestWebSocketCompressionNegotiated(t *testing.T) {
+	ts, _ := newTestAPI(t, "")
+	d := websocket.Dialer{EnableCompression: true}
+	ws, resp, err := d.Dial("ws"+strings.TrimPrefix(ts.URL, "http")+"/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws.Close()
+	if resp == nil || !strings.Contains(resp.Header.Get("Sec-WebSocket-Extensions"), "permessage-deflate") {
+		t.Fatalf("extensions = %+v", resp)
+	}
+}
+
+// TestHasVisibleClients proves the adaptive-polling signal (PERF-6.3): a
+// connected tab counts, a hidden tab does not, and disconnect clears it.
+func TestHasVisibleClients(t *testing.T) {
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+
+	ws := dialWS(t, st.ts.URL, "", "")
+	readUntilType(t, ws, 3*time.Second, "snapshot")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if st.srv.HasVisibleClients() {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !st.srv.HasVisibleClients() {
+		t.Fatal("connected tab not counted as visible")
+	}
+
+	if err := ws.WriteJSON(map[string]any{"type": "hidden", "value": true}); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !st.srv.HasVisibleClients() {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if st.srv.HasVisibleClients() {
+		t.Fatal("hidden tab still counted as visible")
+	}
+	ws.Close()
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !st.srv.HasVisibleClients() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("closed tab still counted")
+}
+
+// TestSendDetailIfChanged proves per-client detail sends are change-driven
+// (PERF-6.3): an identical payload hash queues nothing, a new one queues
+// exactly one envelope.
+func TestSendDetailIfChanged(t *testing.T) {
+	c := &wsClient{
+		send:    make(chan []byte, 8),
+		closeCh: make(chan struct{}),
+		version: wsVersionMin,
+	}
+	d := rtorrent.Detail{Hash: "a"}
+	c.sendDetailIfChanged("a", d, 123)
+	if len(c.send) != 1 {
+		t.Fatalf("queued = %d, want 1", len(c.send))
+	}
+	c.sendDetailIfChanged("a", d, 123)
+	if len(c.send) != 1 {
+		t.Fatalf("queued = %d, want still 1 (unchanged payload)", len(c.send))
+	}
+	c.sendDetailIfChanged("a", d, 456)
+	if len(c.send) != 2 {
+		t.Fatalf("queued = %d, want 2", len(c.send))
+	}
+	var env wsEnvelope
+	if err := json.Unmarshal(<-c.send, &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.V != wsVersionMin || env.Type != "detail" || env.Hash != "a" {
+		t.Fatalf("envelope = %+v", env)
 	}
 }

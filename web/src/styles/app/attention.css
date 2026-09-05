@@ -1,0 +1,96 @@
+.attention-view {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--sp-8) var(--sp-9) 70px;
+  color: var(--text-primary);
+}
+.attention-view > * {
+  max-width: 1100px;
+}
+.attention-view h1 {
+  margin: 0;
+  font-size: var(--fs-section-title);
+}
+.attention-view h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.attention-view p {
+  line-height: 1.6;
+}
+.attention-header,
+.attention-incident header,
+.attention-evidence header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+.attention-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.attention-view button,
+.attention-view select {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.attention-view button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.attention-summary,
+.attention-incident,
+.attention-evidence {
+  margin: var(--sp-4) 0;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-panel);
+  overflow-wrap: anywhere;
+}
+.attention-status,
+.attention-times {
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+}
+.attention-state {
+  padding: 3px 8px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  white-space: nowrap;
+}
+.attention-open {
+  color: var(--accent-text);
+  background: var(--accent-tint);
+}
+.attention-view details {
+  margin-top: var(--sp-3);
+}
+.attention-view summary {
+  cursor: pointer;
+}
+.attention-hashes {
+  padding-left: var(--sp-4);
+}
+.attention-hashes li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+}
+.attention-hashes code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.attention-coverage {
+  color: var(--text-secondary);
+}

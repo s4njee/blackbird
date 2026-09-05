@@ -1,0 +1,65 @@
+/* High Contrast (THM-9.2): pure-black surfaces, white text, bold borders, vivid accents. */
+
+html[data-theme="contrast"] {
+  /* ---- Backgrounds ---- */
+  --pal-bg-canvas: #000000;
+  --pal-bg-app: #000000;
+  --pal-bg-row-alt: #060606;
+  --pal-bg-panel: #000000;
+  --pal-bg-chrome: #0a0a0a;
+  --pal-bg-elevated: #111111;
+  --pal-bg-control: #1a1a1a;
+  --pal-bg-control-active: #242424;
+  --pal-bg-track: #222222;
+  --pal-bg-track-dim: #161616;
+
+  /* ---- Borders ---- */
+  --pal-border-strong: #8a9199;
+  --pal-border-default: #5d6369;
+  --pal-border-control: #6b7178;
+  --pal-border-subtle: #3a3f45;
+  --pal-border-row: #2c3035;
+  --pal-border-row-dim: #24282d;
+
+  /* ---- Text ---- */
+  --pal-text-primary: #ffffff;
+  --pal-text-body: #ffffff;
+  --pal-text-secondary: #e8eaed;
+  --pal-text-muted: #c9ced4;
+  --pal-text-dim: #b6bbc1;
+  --pal-text-faint: #9aa0a7;
+  --pal-text-fainter: #8b9199;
+  --pal-text-ghost: #7c828a;
+
+  /* ---- State ---- */
+  --pal-state-disabled: #6b7178;
+
+  /* ---- Accent ---- */
+  --pal-accent: #7aa2ff;
+  --pal-accent-foreground: #000000;
+  --pal-accent-ink: #ffffff;
+
+  /* ---- Rates ---- */
+  --pal-rate-up: #22d3ee;
+  --pal-rate-up-text: #8ae4ef;
+
+  /* ---- Progress (blue/green, never the accent) ---- */
+  --pal-progress-active: #4da3ff;
+  --pal-progress-complete: #4ade80;
+
+  /* ---- Status ---- */
+  --pal-status-error: #ff7a6e;
+  --pal-status-warn: #ffd60a;
+
+  /* ---- Label palette ---- */
+  --pal-label-iso: #ffab00;
+  --pal-label-archive: #d9b06a;
+  --pal-label-kernel: #4de3ff;
+  --pal-label-apps: #c4b5fd;
+  --pal-label-media: #ff7a6e;
+
+  /* ---- Shadows ---- */
+  --pal-shadow-window: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --pal-shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --pal-shadow-menu: 0 18px 40px rgba(0, 0, 0, 0.6);
+}

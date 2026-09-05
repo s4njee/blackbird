@@ -78,71 +78,6 @@ func (c *Client) MultiCall(ctx context.Context, reqs []Request) ([]Result, error
 // Fault mirrors xmlrpc.Fault so per-entry multicall errors keep the type.
 type Fault = xmlrpc.Fault
 
-// GlobalSettingsKeys maps the Settings-surface tuning keys to their
-// rtorrent getter methods (the setter is getter + ".set"). This is the
-// contract Epic 8's UI reads and writes via GetGlobal/SetGlobal.
-var GlobalSettingsKeys = []string{
-	// Connection & network
-	"network.port_range",
-	"network.port_random",
-	"protocol.encryption",
-	"dht.mode",
-	"dht.port",
-	"trackers.use_udp",
-	"protocol.pex",
-	"network.local_address",
-	"network.bind_address",
-	"network.http.max_open",
-	"network.max_open_sockets",
-	"network.max_open_files",
-	// Peer limits
-	"throttle.min_peers.normal",
-	"throttle.max_peers.normal",
-	"throttle.min_peers.seeded",
-	"throttle.max_peers.seeded",
-	"throttle.max_uploads",
-	"throttle.max_uploads.global",
-	// Bandwidth (KB/s, 0 = unlimited)
-	"throttle.global_down.max_rate",
-	"throttle.global_up.max_rate",
-	// Queue
-	"throttle.max_downloads.global",
-	"throttle.max_uploads.global.queue", // deprecated alias; see throttle.max_uploads.global
-	// Directories
-	"directory.default",
-}
-
-// GetGlobal reads one global setting by getter method name (e.g.
-// "throttle.global_down.max_rate").
-func (c *Client) GetGlobal(ctx context.Context, getter string) (xmlrpc.Value, error) {
-	res, err := c.scgi.Call(ctx, getter, nil)
-	if err != nil {
-		return xmlrpc.Value{}, err
-	}
-	if len(res) == 0 {
-		return xmlrpc.Value{}, fmt.Errorf("rtorrent: empty response for %s", getter)
-	}
-	return res[0], nil
-}
-
-// GetGlobalString reads a global setting coerced to a string.
-func (c *Client) GetGlobalString(ctx context.Context, getter string) (string, error) {
-	v, err := c.GetGlobal(ctx, getter)
-	if err != nil {
-		return "", err
-	}
-	return sval(v), nil
-}
-
-// GetGlobalInt reads a global setting coerced to an int64.
-func (c *Client) GetGlobalInt(ctx context.Context, getter string) (int64, error) {
-	v, err := c.GetGlobal(ctx, getter)
-	if err != nil {
-		return 0, err
-	}
-	return ival(v), nil
-}
-
 // SetGlobal applies one global setting by its *.set method name, e.g.
 // SetGlobal("throttle.global_down.max_rate.set", 20480). Values may be
 // strings, ints or bools; rtorrent coerces.
@@ -151,26 +86,94 @@ func (c *Client) SetGlobal(ctx context.Context, setter string, value xmlrpc.Valu
 	return err
 }
 
-// SetGlobalInt is SetGlobal with an integer payload.
-func (c *Client) SetGlobalInt(ctx context.Context, setter string, n int64) error {
-	return c.SetGlobal(ctx, setter, xmlrpc.Value{Type: "int", Int: n})
+// DisableAllTrackers disables every tracker currently attached to every loaded
+// torrent. rTorrent exposes this as a command rather than a persistent
+// boolean, so callers should invoke it after each successful connection.
+func (c *Client) DisableAllTrackers(ctx context.Context) error {
+	_, err := c.scgi.Call(ctx, "trackers.disable", []xmlrpc.Value{str(""), str("0")})
+	return err
 }
 
-// SetGlobalString is SetGlobal with a string payload.
-func (c *Client) SetGlobalString(ctx context.Context, setter, s string) error {
-	return c.SetGlobal(ctx, setter, xmlrpc.Value{Type: "string", Str: s})
+// TrackerTarget names one tracker by the torrent that owns it and its index
+// in that torrent's tracker list — the pair that forms the "hash:tN"
+// sub-target every t.* command takes.
+type TrackerTarget struct {
+	Hash  string
+	Index int
 }
 
-// SetGlobalBool is SetGlobal with a boolean payload (rtorrent accepts 0/1).
-func (c *Client) SetGlobalBool(ctx context.Context, setter string, b bool) error {
-	return c.SetGlobal(ctx, setter, xmlrpc.Value{Type: "int", Int: boolToInt(b)})
-}
-
-func boolToInt(b bool) int64 {
-	if b {
-		return 1
+// TrackerTargets enumerates every tracker attached to every loaded torrent
+// in one round trip, ordered by torrent. rTorrent has no global tracker
+// list, so this reads each torrent's tracker count and expands it into
+// per-tracker targets; callers that must not announce all at once (see
+// internal/trackers) work through the result in batches.
+func (c *Client) TrackerTargets(ctx context.Context) ([]TrackerTarget, error) {
+	res, err := c.scgi.Call(ctx, "d.multicall2", []xmlrpc.Value{
+		str(""), str("main"), str("d.hash="), str("d.tracker_size="),
+	})
+	if err != nil {
+		return nil, err
 	}
-	return 0
+	if len(res) == 0 {
+		return nil, nil
+	}
+	var out []TrackerTarget
+	for _, row := range aval(res[0]) {
+		cols := aval(row)
+		if len(cols) < 2 {
+			continue
+		}
+		hash := sval(cols[0])
+		if hash == "" {
+			continue
+		}
+		for i := 0; i < int(ival(cols[1])); i++ {
+			out = append(out, TrackerTarget{Hash: hash, Index: i})
+		}
+	}
+	return out, nil
+}
+
+// SetTrackersEnabled flips a batch of trackers in a single system.multicall.
+// Per-tracker faults are counted rather than returned: a torrent erased
+// between enumeration and this call faults only its own entries, and failing
+// the whole batch for that would stall a ramp. The error is non-nil only
+// when the round trip itself failed.
+func (c *Client) SetTrackersEnabled(ctx context.Context, targets []TrackerTarget, enabled bool) (failed int, err error) {
+	if len(targets) == 0 {
+		return 0, nil
+	}
+	val := "0"
+	if enabled {
+		val = "1"
+	}
+	reqs := make([]Request, len(targets))
+	for i, t := range targets {
+		reqs[i] = Request{
+			Method: "t.is_enabled.set",
+			Params: []xmlrpc.Value{str(fmt.Sprintf("%s:t%d", t.Hash, t.Index)), str(val)},
+		}
+	}
+	results, err := c.MultiCall(ctx, reqs)
+	if err != nil {
+		return 0, err
+	}
+	for _, r := range results {
+		if r.Err != nil {
+			failed++
+		}
+	}
+	return failed, nil
+}
+
+// SetGlobalRateKB sets a global throttle cap in KiB/s via the .set_kb
+// variant (e.g. "throttle.global_down.max_rate.set_kb"). Verified against
+// rTorrent 0.16.18: like all CMD2_ANY commands it takes an explicit empty
+// target first, and unlike plain .set (bytes with >>10 rounding) it carries
+// exact KiB/s values.
+func (c *Client) SetGlobalRateKB(ctx context.Context, setter string, kb int64) error {
+	_, err := c.scgi.Call(ctx, setter, []xmlrpc.Value{str(""), {Type: "int", Int: kb}})
+	return err
 }
 
 // Versions returns (rtorrent, libtorrent) version strings for the status
@@ -203,23 +206,76 @@ func (c *Client) Versions(ctx context.Context) (client, library string, err erro
 	return client, library, nil
 }
 
+// globalMethods are the system.multicall getters backing GlobalStats, in
+// order. GlobalStats and ListAndGlobals share them so the two paths can
+// never disagree on what "global" means.
+var globalMethods = []string{
+	"throttle.global_down.rate",
+	"throttle.global_up.rate",
+	"throttle.global_down.total",
+	"throttle.global_up.total",
+	"system.client_version",
+	"system.library_version",
+	"network.port",
+	"dht.statistics",
+}
+
 // GlobalStats gathers the status-bar / stat-card globals in one
-// system.multicall.
+// system.multicall. Getter names are bare (no `=` suffix): the suffixed form
+// is undefined on rTorrent 0.16 (verified live), while bare names work on
+// both old and new daemons.
 func (c *Client) GlobalStats(ctx context.Context) (GlobalStats, error) {
-	var g GlobalStats
-	results, err := c.MultiCall(ctx, []Request{
-		{Method: "throttle.global_down.rate="},
-		{Method: "throttle.global_up.rate="},
-		{Method: "throttle.global_down.total="},
-		{Method: "throttle.global_up.total="},
-		{Method: "system.client_version="},
-		{Method: "system.library_version="},
-		{Method: "network.port="},
-		{Method: "dht.statistics="},
-	})
-	if err != nil {
-		return g, err
+	reqs := make([]Request, 0, len(globalMethods))
+	for _, m := range globalMethods {
+		reqs = append(reqs, Request{Method: m})
 	}
+	results, err := c.MultiCall(ctx, reqs)
+	if err != nil {
+		return GlobalStats{}, err
+	}
+	return parseGlobalResults(results), nil
+}
+
+// ListAndGlobals fetches the torrent list and the global stats in one
+// system.multicall (PERF-6.3): the first entry nests the d.multicall2 list
+// poll, followed by the global getters. One SCGI round trip per poll cycle
+// instead of two.
+func (c *Client) ListAndGlobals(ctx context.Context) ([]Torrent, GlobalStats, error) {
+	params := []xmlrpc.Value{str(""), str("main")}
+	for _, cmd := range listCommands {
+		params = append(params, str(cmd))
+	}
+	reqs := make([]Request, 0, len(globalMethods)+1)
+	reqs = append(reqs, Request{Method: "d.multicall2", Params: params})
+	for _, m := range globalMethods {
+		reqs = append(reqs, Request{Method: m})
+	}
+	results, err := c.MultiCall(ctx, reqs)
+	if err != nil {
+		return nil, GlobalStats{}, err
+	}
+	if len(results) != len(reqs) {
+		return nil, GlobalStats{}, fmt.Errorf("rtorrent: truncated multicall response (%d of %d)", len(results), len(reqs))
+	}
+	if results[0].Err != nil {
+		return nil, GlobalStats{}, results[0].Err
+	}
+	if len(results[0].Values) == 0 {
+		return nil, GlobalStats{}, errors.New("rtorrent: empty d.multicall2 response")
+	}
+	rows := aval(results[0].Values[0])
+	torrents := make([]Torrent, 0, len(rows))
+	for _, row := range rows {
+		torrents = append(torrents, mapTorrent(aval(row)))
+	}
+	return torrents, parseGlobalResults(results[1:]), nil
+}
+
+// parseGlobalResults normalizes one global-getter result slice (in
+// globalMethods order) into GlobalStats. Per-entry faults read as zero,
+// matching the old GlobalStats behavior.
+func parseGlobalResults(results []Result) GlobalStats {
+	var g GlobalStats
 	iv := func(i int) int64 {
 		if i < len(results) && results[i].Err == nil && len(results[i].Values) > 0 {
 			return ival(results[i].Values[0])
@@ -246,7 +302,7 @@ func (c *Client) GlobalStats(ctx context.Context) (GlobalStats, error) {
 	if g.SessionDownTotal > 0 {
 		g.SessionRatio = float64(g.SessionUpTotal) / float64(g.SessionDownTotal)
 	}
-	return g, nil
+	return g
 }
 
 // dhtNodes digs the node count out of dht.statistics (a struct: {"dht":

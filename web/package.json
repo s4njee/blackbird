@@ -8,14 +8,34 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "rm -rf .test-dist && tsc --target ES2022 --module ES2022 --moduleResolution bundler --outDir .test-dist src/lib/filter.ts src/lib/sort.ts && node test/filter.test.mjs && rm -rf .test-dist"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:css": "stylelint 'src/styles/**/*.css'",
+    "check-contrast": "node scripts/check-contrast.mjs",
+    "gen:theme-docs": "node scripts/gen-theme-docs.mjs",
+    "e2e": "playwright test",
+    "format": "prettier --write src test e2e scripts playwright.config.ts vitest.config.ts eslint.config.mjs",
+    "format:check": "prettier --check src test e2e scripts playwright.config.ts vitest.config.ts eslint.config.mjs",
+    "size": "node scripts/size.mjs"
   },
   "dependencies": {
     "solid-js": "^1.9.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
+    "@solidjs/testing-library": "^0.8.10",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "happy-dom": "^20.13.2",
+    "prettier": "^3.9.6",
+    "stylelint": "^17.14.1",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.69.0",
     "vite": "^6.2.0",
-    "vite-plugin-solid": "^2.11.6"
+    "vite-plugin-solid": "^2.11.6",
+    "vitest": "^4.1.11"
   }
 }

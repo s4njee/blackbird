@@ -33,18 +33,25 @@ LABEL org.opencontainers.image.title="Blackbird" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.licenses="NOASSERTION"
 
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata p7zip su-exec \
     && addgroup -S -g 65532 blackbird \
     && adduser -S -D -H -u 65532 -G blackbird blackbird \
     && mkdir -p /config /downloads /watch \
-    && chown -R 65532:65532 /config /downloads /watch
+    && chown -R 65532:65532 /config /downloads /watch \
+    # Compose runs this service as the host UID so that bind-mounted
+    # downloads stay user-owned and match rTorrent's writes. A named volume
+    # inherits these directory modes at creation, so keep them open enough
+    # for any PUID to use. Config *files* are written 0600 by the app.
+    && chmod 0777 /config /downloads /watch
 COPY --from=builder /out/blackbird /usr/local/bin/blackbird
 COPY internal/config/example.yml /usr/share/blackbird/example.yml
 COPY THIRD_PARTY_NOTICES.md /usr/share/licenses/blackbird/THIRD_PARTY_NOTICES.md
 COPY blackbird-entrypoint.sh /usr/local/bin/blackbird-entrypoint
 RUN chmod 0755 /usr/local/bin/blackbird-entrypoint
 
-USER 65532:65532
+# No USER directive: the entrypoint starts as root to repair mount-point
+# ownership, then drops to PUID:PGID (default 1000:1000) via su-exec before
+# the server runs. See blackbird-entrypoint.sh.
 WORKDIR /config
 EXPOSE 8222
 HEALTHCHECK --interval=15s --timeout=4s --start-period=15s --retries=5 \

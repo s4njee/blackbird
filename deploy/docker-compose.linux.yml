@@ -23,3 +23,7 @@ services:
       - type: bind
         source: ${BLACKBIRD_WATCH_DIR:-./data/watch}
         target: /watch
+      - type: bind
+        source: ${RTORRENT_SESSION_DIR:-./data/session}
+        target: /data/session
+        read_only: true

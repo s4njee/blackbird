@@ -3,6 +3,55 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- PERF-6.5: the font ships unhashed under /fonts, so it preloads from
+         stable markup instead of waiting on the CSSOM. -->
+    <link rel="preload" href="/fonts/ibm-plex-sans-var.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- THM-9.1: static fallback; DocumentMeta keeps this in sync with the
+         --bg-app token on every theme/accent application. -->
+    <meta name="theme-color" content="#101214" />
+    <!-- THM-9.2: server-injected operator defaults (ui.theme, ui.accent);
+         the boot script below applies them before first paint. -->
+    <meta name="blackbird-theme-default" content="__BLACKBIRD_THEME_DEFAULT__" />
+    <meta name="blackbird-accent-default" content="__BLACKBIRD_ACCENT_DEFAULT__" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("blackbird.theme.v1");
+          if (!t) {
+            var m = document.querySelector('meta[name="blackbird-theme-default"]');
+            t = (m && m.content) || "dark";
+          }
+          if (t === "system") {
+            t =
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark";
+          }
+          if (
+            ["dark", "light", "midnight", "contrast", "classic"].indexOf(t) < 0
+          ) {
+            t = "dark";
+          }
+          document.documentElement.dataset.theme = t;
+          var d = null;
+          try {
+            d = localStorage.getItem("blackbird.density.v1");
+          } catch (e2) {
+            /* ignore */
+          }
+          if (d !== "dense" && d !== "comfortable") d = "dense";
+          document.documentElement.dataset.density = d;
+          var a = document.querySelector('meta[name="blackbird-accent-default"]');
+          var c = (a && a.content) || "";
+          if (/^#[0-9a-f]{6}$/i.test(c)) {
+            document.documentElement.style.setProperty("--accent", c);
+          }
+        } catch (e) {
+          /* private mode / no storage: app boot applies defaults */
+        }
+      })();
+    </script>
     <title>Blackbird Console</title>
   </head>
   <body>

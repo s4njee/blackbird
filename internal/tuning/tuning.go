@@ -21,12 +21,88 @@ type Entry struct {
 	Value  xmlrpc.Value
 }
 
+// methodRow is one row of the scalar tuning table (POL-8.8): the single
+// source of truth mapping a tuning key to its rtorrent setter and getter
+// methods. Entries() and Keys()/GetterFor() all derive from it so setters,
+// getters, and the key list can never drift apart.
+//
+// Wire-form note: the setter/getter strings below are the pre-0.16 forms.
+// Migrating them to target-first `.set_kb` / bare getters is a separate
+// verified story (see PAR-4.3 Remaining); this table only unifies them.
+var methodTable = []struct {
+	Key    string
+	Setter string
+	Getter string
+}{
+	{"network.port_range", "network.port_range.set", "network.port_range="},
+	{"network.port_random", "network.port_random.set", "network.port_random="},
+	{"protocol.encryption", "protocol.encryption.set", "protocol.encryption="},
+	{"dht.mode", "dht.mode.set", "dht.mode="},
+	{"dht.port", "dht.port.set", "dht.port="},
+	{"trackers.use_udp", "trackers.use_udp.set", "trackers.use_udp="},
+	{"protocol.pex", "protocol.pex.set", "protocol.pex="},
+	{"network.local_address", "network.local_address.set", "network.local_address="},
+	{"network.bind_address", "network.bind_address.set", "network.bind_address="},
+	{"network.http.max_open", "network.http.max_open.set", "network.http.max_open="},
+	{"network.max_open_sockets", "network.max_open_sockets.set", "network.max_open_sockets="},
+	{"network.max_open_files", "network.max_open_files.set", "network.max_open_files="},
+	{"throttle.min_peers.normal", "throttle.min_peers.normal.set", "throttle.min_peers.normal="},
+	{"throttle.max_peers.normal", "throttle.max_peers.normal.set", "throttle.max_peers.normal="},
+	{"throttle.min_peers.seeded", "throttle.min_peers.seeded.set", "throttle.min_peers.seeded="},
+	{"throttle.max_peers.seeded", "throttle.max_peers.seeded.set", "throttle.max_peers.seeded="},
+	{"throttle.max_uploads", "throttle.max_uploads.set", "throttle.max_uploads="},
+	{"throttle.max_uploads.global", "throttle.max_uploads.global.set", "throttle.max_uploads.global="},
+	{"throttle.global_down.max_rate", "throttle.global_down.max_rate.set", "throttle.global_down.max_rate="},
+	{"throttle.global_up.max_rate", "throttle.global_up.max_rate.set", "throttle.global_up.max_rate="},
+	{"throttle.max_downloads.global", "throttle.max_downloads.global.set", "throttle.max_downloads.global="},
+}
+
+// setterFor returns the setter method for a table key. It returns false when
+// the key is unknown, which can only happen on a programming error: every
+// Entries() call site passes a table key (pinned by TestMethodTableCoversEntries).
+func setterFor(key string) (string, bool) {
+	for _, row := range methodTable {
+		if row.Key == key {
+			return row.Setter, true
+		}
+	}
+	return "", false
+}
+
+// Keys returns the tuning keys in stable table order. GET /api/settings
+// iterates this (not a map) so the live-value multicall is deterministic.
+func Keys() []string {
+	out := make([]string, 0, len(methodTable))
+	for _, row := range methodTable {
+		out = append(out, row.Key)
+	}
+	return out
+}
+
+// GetterFor returns the getter method for a table key.
+func GetterFor(key string) (string, bool) {
+	for _, row := range methodTable {
+		if row.Key == key {
+			return row.Getter, true
+		}
+	}
+	return "", false
+}
+
 // Entries flattens a Tuning struct into the list of setters to apply, in a
 // stable order. Nil (absent) fields produce no entry — the daemon is left
-// untouched for those keys.
+// untouched for those keys. Setter methods resolve through methodTable, the
+// single source of truth shared with Keys/GetterFor.
 func Entries(t config.Tuning) []Entry {
 	var e []Entry
-	add := func(key, setter string, v xmlrpc.Value) {
+	add := func(key string, v xmlrpc.Value) {
+		setter, ok := setterFor(key)
+		if !ok {
+			// Unreachable with the current call sites (see
+			// TestMethodTableCoversEntries); failing open would send a
+			// malformed method to the daemon, so drop loudly instead.
+			panic("tuning: unknown key " + key)
+		}
 		e = append(e, Entry{Key: key, Setter: setter, Value: v})
 	}
 	str := func(s string) xmlrpc.Value { return xmlrpc.Value{Type: "string", Str: s} }
@@ -39,67 +115,67 @@ func Entries(t config.Tuning) []Entry {
 	}
 
 	if t.PortRange != nil {
-		add("network.port_range", "network.port_range.set", str(*t.PortRange))
+		add("network.port_range", str(*t.PortRange))
 	}
 	if t.PortRandom != nil {
-		add("network.port_random", "network.port_random.set", boolI(*t.PortRandom))
+		add("network.port_random", boolI(*t.PortRandom))
 	}
 	if t.Encryption != nil {
-		add("protocol.encryption", "protocol.encryption.set", str(*t.Encryption))
+		add("protocol.encryption", str(*t.Encryption))
 	}
 	if t.DHTMode != nil {
-		add("dht.mode", "dht.mode.set", str(*t.DHTMode))
+		add("dht.mode", str(*t.DHTMode))
 	}
 	if t.DHTPort != nil {
-		add("dht.port", "dht.port.set", intV(int64(*t.DHTPort)))
+		add("dht.port", intV(int64(*t.DHTPort)))
 	}
 	if t.UseUDP != nil {
-		add("trackers.use_udp", "trackers.use_udp.set", boolI(*t.UseUDP))
+		add("trackers.use_udp", boolI(*t.UseUDP))
 	}
 	if t.PEX != nil {
-		add("protocol.pex", "protocol.pex.set", boolI(*t.PEX))
+		add("protocol.pex", boolI(*t.PEX))
 	}
 	if t.LocalAddress != nil && *t.LocalAddress != "" {
-		add("network.local_address", "network.local_address.set", str(*t.LocalAddress))
+		add("network.local_address", str(*t.LocalAddress))
 	}
 	if t.BindAddress != nil && *t.BindAddress != "" {
-		add("network.bind_address", "network.bind_address.set", str(*t.BindAddress))
+		add("network.bind_address", str(*t.BindAddress))
 	}
 	if t.HTTPMaxOpen != nil {
-		add("network.http.max_open", "network.http.max_open.set", intV(int64(*t.HTTPMaxOpen)))
+		add("network.http.max_open", intV(int64(*t.HTTPMaxOpen)))
 	}
 	if t.MaxOpenSockets != nil {
-		add("network.max_open_sockets", "network.max_open_sockets.set", intV(int64(*t.MaxOpenSockets)))
+		add("network.max_open_sockets", intV(int64(*t.MaxOpenSockets)))
 	}
 	if t.MaxOpenFiles != nil {
-		add("network.max_open_files", "network.max_open_files.set", intV(int64(*t.MaxOpenFiles)))
+		add("network.max_open_files", intV(int64(*t.MaxOpenFiles)))
 	}
 	if t.MinPeersNormal != nil {
-		add("throttle.min_peers.normal", "throttle.min_peers.normal.set", intV(int64(*t.MinPeersNormal)))
+		add("throttle.min_peers.normal", intV(int64(*t.MinPeersNormal)))
 	}
 	if t.MaxPeersNormal != nil {
-		add("throttle.max_peers.normal", "throttle.max_peers.normal.set", intV(int64(*t.MaxPeersNormal)))
+		add("throttle.max_peers.normal", intV(int64(*t.MaxPeersNormal)))
 	}
 	if t.MinPeersSeeded != nil {
-		add("throttle.min_peers.seeded", "throttle.min_peers.seeded.set", intV(int64(*t.MinPeersSeeded)))
+		add("throttle.min_peers.seeded", intV(int64(*t.MinPeersSeeded)))
 	}
 	if t.MaxPeersSeeded != nil {
-		add("throttle.max_peers.seeded", "throttle.max_peers.seeded.set", intV(int64(*t.MaxPeersSeeded)))
+		add("throttle.max_peers.seeded", intV(int64(*t.MaxPeersSeeded)))
 	}
 	if t.MaxUploads != nil {
-		add("throttle.max_uploads", "throttle.max_uploads.set", intV(int64(*t.MaxUploads)))
+		add("throttle.max_uploads", intV(int64(*t.MaxUploads)))
 	}
 	if t.MaxUploadsGlobal != nil {
-		add("throttle.max_uploads.global", "throttle.max_uploads.global.set", intV(int64(*t.MaxUploadsGlobal)))
+		add("throttle.max_uploads.global", intV(int64(*t.MaxUploadsGlobal)))
 	}
 	if t.GlobalDownRateKB != nil {
-		add("throttle.global_down.max_rate", "throttle.global_down.max_rate.set", intV(*t.GlobalDownRateKB))
+		add("throttle.global_down.max_rate", intV(*t.GlobalDownRateKB))
 	}
 	if t.GlobalUpRateKB != nil {
-		add("throttle.global_up.max_rate", "throttle.global_up.max_rate.set", intV(*t.GlobalUpRateKB))
+		add("throttle.global_up.max_rate", intV(*t.GlobalUpRateKB))
 	}
 	if t.MaxDownloadsGlobal != nil {
-		add("throttle.max_downloads.global", "throttle.max_downloads.global.set", intV(int64(*t.MaxDownloadsGlobal)))
+		add("throttle.max_downloads.global", intV(int64(*t.MaxDownloadsGlobal)))
 	}
 	return e
 }
@@ -178,32 +254,4 @@ func serialize1(e Entry) string {
 	var b bytes.Buffer
 	xmlrpc.AppendValue(&b, e.Value)
 	return b.String()
-}
-
-// GetterMethods maps each tuning key to its rtorrent getter method, used by
-// GET /api/settings to show live daemon values alongside YAML values.
-func GetterMethods() map[string]string {
-	return map[string]string{
-		"network.port_range":            "network.port_range=",
-		"network.port_random":           "network.port_random=",
-		"protocol.encryption":           "protocol.encryption=",
-		"dht.mode":                      "dht.mode=",
-		"dht.port":                      "dht.port=",
-		"trackers.use_udp":              "trackers.use_udp=",
-		"protocol.pex":                  "protocol.pex=",
-		"network.local_address":         "network.local_address=",
-		"network.bind_address":          "network.bind_address=",
-		"network.http.max_open":         "network.http.max_open=",
-		"network.max_open_sockets":      "network.max_open_sockets=",
-		"network.max_open_files":        "network.max_open_files=",
-		"throttle.min_peers.normal":     "throttle.min_peers.normal=",
-		"throttle.max_peers.normal":     "throttle.max_peers.normal=",
-		"throttle.min_peers.seeded":     "throttle.min_peers.seeded=",
-		"throttle.max_peers.seeded":     "throttle.max_peers.seeded=",
-		"throttle.max_uploads":          "throttle.max_uploads=",
-		"throttle.max_uploads.global":   "throttle.max_uploads.global=",
-		"throttle.global_down.max_rate": "throttle.global_down.max_rate=",
-		"throttle.global_up.max_rate":   "throttle.global_up.max_rate=",
-		"throttle.max_downloads.global": "throttle.max_downloads.global=",
-	}
 }

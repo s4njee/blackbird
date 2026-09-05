@@ -1,0 +1,540 @@
+/* ---- Fixed torrent table (Epic 5.2–5.4) ---- */
+
+.torrent-table-wrap {
+  height: 100%;
+  overflow: auto;
+}
+.table-file-drag {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.table-drop-hint {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-tint-strong);
+  color: var(--accent-text);
+  font-size: var(--fs-app-name);
+  font-weight: 600;
+  pointer-events: none;
+}
+.torrent-table {
+  width: 100%;
+  min-width: 940px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: var(--fs-cell);
+  color: var(--text-muted);
+}
+.torrent-table col.check-col {
+  width: 26px;
+}
+.torrent-table col.col-size {
+  width: 74px;
+}
+.torrent-table col.col-done {
+  width: 112px;
+}
+.torrent-table col.col-remaining {
+  width: 96px;
+}
+.torrent-table col.col-status {
+  width: 96px;
+}
+.torrent-table col.col-peers {
+  width: 66px;
+}
+.torrent-table col.col-peers-detail {
+  width: 58px;
+}
+.torrent-table col.col-rate {
+  width: 78px;
+}
+.torrent-table col.col-total {
+  width: 104px;
+}
+.torrent-table col.col-eta {
+  width: 64px;
+}
+.torrent-table col.col-ratio {
+  width: 54px;
+}
+.torrent-table col.col-label {
+  width: 88px;
+}
+.torrent-table col.col-priority {
+  width: 74px;
+}
+.torrent-table col.col-throttle {
+  width: 90px;
+}
+.torrent-table col.col-ratio-group {
+  width: 94px;
+}
+.torrent-table col.col-added,
+.torrent-table col.col-finished,
+.torrent-table col.col-created {
+  width: 86px;
+}
+.torrent-table col.col-seeding-time {
+  width: 96px;
+}
+.torrent-table col.col-tracker {
+  width: 120px;
+}
+.torrent-table col.col-tracker-status {
+  width: 104px;
+}
+.torrent-table col.col-path {
+  width: 180px;
+}
+.torrent-table col.col-hash {
+  width: 140px;
+}
+.torrent-table col.col-message {
+  width: 180px;
+}
+.torrent-table thead {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: var(--bg-chrome);
+}
+.torrent-table th {
+  position: relative;
+  height: var(--h-table-header);
+  padding: 0 var(--sp-2);
+  overflow: hidden;
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font-size: var(--fs-header);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: default;
+}
+.torrent-table th:first-of-type {
+  color: var(--text-secondary);
+}
+.torrent-table th.sorted {
+  color: var(--accent-text);
+}
+.torrent-table th.check-head {
+  padding: 0;
+  text-align: center;
+  cursor: default;
+}
+/* Keyboard-reachable sort headers (POL-8.5): the button owns the click. */
+.column-header-button {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.column-header-label {
+  display: block;
+  overflow: hidden;
+  padding-right: 8px;
+  text-overflow: ellipsis;
+}
+.column-resize-handle {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+}
+.column-resize-handle:hover {
+  background: var(--accent);
+  opacity: 0.65;
+}
+.sort-caret {
+  margin-left: 4px;
+  color: var(--accent);
+  font-size: 8px;
+}
+.torrent-table tbody tr {
+  height: var(--h-table-row);
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border-row);
+  transition:
+    opacity var(--t-row-fade),
+    background var(--t-row-fade);
+  cursor: default;
+}
+.torrent-table tbody tr.row-alt {
+  background: var(--bg-row-alt);
+}
+.torrent-table tbody tr:hover {
+  background: var(--bg-control);
+}
+.torrent-table tbody tr.selected {
+  background: var(--accent-tint);
+}
+.torrent-table tbody tr.virtual-spacer,
+.torrent-table tbody tr.virtual-spacer:hover {
+  background: transparent;
+  border-bottom: 0;
+  cursor: default;
+}
+.torrent-table tbody tr.virtual-spacer td {
+  padding: 0;
+  border: 0;
+}
+.torrent-table tbody tr.row-enter {
+  animation: row-in var(--t-row-fade);
+}
+@keyframes row-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.torrent-table td {
+  height: var(--h-table-row);
+  padding: 0 var(--sp-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.torrent-table .check-cell {
+  padding: 0;
+  text-align: center;
+}
+.row-checkbox {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  vertical-align: middle;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-chip);
+  background: transparent;
+  cursor: pointer;
+}
+.row-checkbox.checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--bg-chrome);
+}
+.torrent-name {
+  color: var(--text-body);
+}
+.numeric {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.torrent-table th.col-size,
+.torrent-table th.col-peers,
+.torrent-table th.col-rate,
+.torrent-table th.col-eta,
+.torrent-table th.col-ratio,
+.torrent-table th.col-added {
+  text-align: right;
+}
+.progress {
+  position: relative;
+  height: 12px;
+  overflow: hidden;
+  border-radius: var(--r-chip);
+  background: var(--bg-track);
+}
+/* Percent label beside the bar (POL-8.5): overlaid text cannot meet AA on
+both the fill and the trough, so the value sits on the row background. */
+.progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.progress-wrap > .progress,
+.progress-wrap > .small-progress {
+  flex: 1;
+  min-width: 0;
+}
+.progress-pct {
+  flex: none;
+  color: var(--text-primary);
+  font-size: var(--fs-progress-label);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+.progress-wrap.small .progress-pct {
+  font-size: 8px;
+}
+.progress > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--progress-active);
+  transition: width var(--t-progress);
+}
+.progress > span.complete {
+  background: var(--progress-complete);
+}
+.progress > span.stopped {
+  background: var(--state-disabled);
+}
+.torrent-state.downloading,
+.torrent-state.checking {
+  color: var(--accent-text);
+}
+.torrent-state.seeding {
+  color: var(--text-dim);
+}
+.torrent-state.stopped,
+.torrent-state.queued {
+  color: var(--text-faint);
+}
+.torrent-state.error {
+  color: var(--status-error);
+}
+.rate-down {
+  color: var(--accent-text);
+}
+.rate-up {
+  color: var(--rate-up-text);
+}
+.rate-down:not(:has(*)),
+.rate-up:not(:has(*)) {
+}
+.ratio {
+  color: var(--text-faint);
+}
+.ratio.bright {
+  color: var(--text-muted);
+}
+.label-chip {
+  display: inline-flex;
+  max-width: 100%;
+  height: 16px;
+  align-items: center;
+  padding: 0 6px;
+  overflow: hidden;
+  border-radius: var(--r-chip);
+  background: var(--bg-track);
+  color: var(--text-muted);
+  font-size: var(--fs-chip);
+  line-height: 16px;
+  text-overflow: ellipsis;
+}
+.label-chip.iso {
+  background: var(--accent-tint-strong);
+  color: var(--accent-text);
+}
+.label-chip.archive {
+  background: color-mix(in srgb, var(--status-warn) 12%, transparent);
+  color: var(--status-warn);
+}
+.label-chip.kernel {
+  background: color-mix(in srgb, var(--rate-up) 12%, transparent);
+  color: var(--rate-up-text);
+}
+.label-chip.apps {
+  color: var(--label-apps);
+}
+.label-chip.media {
+  color: var(--status-error);
+}
+.added,
+.tracker {
+  color: var(--text-fainter);
+}
+.tracker {
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.skeleton-row td {
+  padding: 0 12px;
+}
+.skeleton-row span {
+  display: block;
+  width: 100%;
+  height: 12px;
+  border-radius: var(--r-chip);
+  background: linear-gradient(90deg, var(--bg-track), var(--bg-control-active), var(--bg-track));
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.empty-table {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  color: var(--text-fainter);
+  font-size: var(--fs-cell);
+}
+.empty-table button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  cursor: pointer;
+}
+/* Guided first-run state (POL-8.7): only when the session itself is empty,
+distinct from the filtered-empty message above. */
+.empty-session {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-4);
+  padding: var(--sp-9);
+  color: var(--text-secondary);
+  font-size: var(--fs-control);
+  text-align: center;
+}
+.empty-session h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-section-title);
+  font-weight: 600;
+}
+.empty-session p {
+  max-width: 460px;
+  margin: 0;
+  line-height: 1.55;
+}
+.empty-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  justify-content: center;
+}
+.empty-session-actions button {
+  height: 28px;
+  padding: 0 var(--sp-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-body);
+  font: inherit;
+  font-size: var(--fs-control);
+  cursor: pointer;
+}
+.empty-session-actions button:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.empty-session-docs {
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
+}
+.route-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-fainter);
+  font-size: var(--fs-cell);
+}
+
+.column-picker {
+  position: fixed;
+  z-index: 25;
+  width: 260px;
+  max-height: min(520px, calc(100vh - 24px));
+  overflow: auto;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-card);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-secondary);
+}
+.column-picker-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-primary);
+  font-size: var(--fs-control);
+}
+.column-picker-title button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-fainter);
+  font: inherit;
+  font-size: 18px;
+  cursor: pointer;
+}
+.column-picker-title button:hover {
+  color: var(--text-primary);
+}
+.column-picker p {
+  margin: var(--sp-2) 0 var(--sp-3);
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
+}
+.column-picker-list {
+  display: grid;
+  gap: 2px;
+}
+.column-picker-list label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 26px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-control);
+  color: var(--text-secondary);
+  font-size: var(--fs-control);
+  cursor: grab;
+}
+.column-picker-list label:hover {
+  background: var(--bg-control);
+  color: var(--text-primary);
+}
+.column-picker-list label:active {
+  cursor: grabbing;
+}
+.column-picker-list input {
+  accent-color: var(--accent);
+}
+.column-picker-list input:disabled {
+  opacity: 0.6;
+}
+.column-picker-reset {
+  width: 100%;
+  height: 28px;
+  margin-top: var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-control);
+  cursor: pointer;
+}
+.column-picker-reset:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}

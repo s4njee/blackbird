@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "platform": "darwin/arm64",
+      "go": "go1.26.5",
+      "recorded": "2026-09-03T02:43:41Z",
+      "benchmarks": {
+        "BenchmarkComputeDelta": {
+          "nsop": 1006995,
+          "bop": 582,
+          "allocsop": 0
+        },
+        "BenchmarkDeltaEncoding/v1": {
+          "nsop": 427326,
+          "bop": 227134,
+          "allocsop": 607
+        },
+        "BenchmarkDeltaEncoding/v2": {
+          "nsop": 254911,
+          "bop": 164880,
+          "allocsop": 3407
+        },
+        "BenchmarkListDecode/500": {
+          "nsop": 25443340,
+          "bop": 24785326,
+          "allocsop": 325578
+        },
+        "BenchmarkListDecode/5000": {
+          "nsop": 250840312,
+          "bop": 243500272,
+          "allocsop": 3240513
+        },
+        "BenchmarkPollCycle/500": {
+          "nsop": 26204824,
+          "bop": 24799677,
+          "allocsop": 325698
+        },
+        "BenchmarkPollCycle/5000": {
+          "nsop": 298243771,
+          "bop": 243971648,
+          "allocsop": 3242100
+        }
+      }
+    },
+    {
+      "platform": "linux/arm64",
+      "go": "go1.26.8",
+      "recorded": "2026-09-03T02:44:48Z",
+      "benchmarks": {
+        "BenchmarkComputeDelta": {
+          "nsop": 1906139,
+          "bop": 1028,
+          "allocsop": 0
+        },
+        "BenchmarkDeltaEncoding/v1": {
+          "nsop": 378900,
+          "bop": 226606,
+          "allocsop": 607
+        },
+        "BenchmarkDeltaEncoding/v2": {
+          "nsop": 259876,
+          "bop": 164879,
+          "allocsop": 3407
+        },
+        "BenchmarkListDecode/500": {
+          "nsop": 30845230,
+          "bop": 24785424,
+          "allocsop": 325580
+        },
+        "BenchmarkListDecode/5000": {
+          "nsop": 285140876,
+          "bop": 243502452,
+          "allocsop": 3240520
+        },
+        "BenchmarkPollCycle/500": {
+          "nsop": 30169800,
+          "bop": 24800339,
+          "allocsop": 325700
+        },
+        "BenchmarkPollCycle/5000": {
+          "nsop": 273661479,
+          "bop": 243970540,
+          "allocsop": 3242099
+        }
+      }
+    }
+  ]
+}

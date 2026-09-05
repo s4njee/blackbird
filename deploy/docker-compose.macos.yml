@@ -26,3 +26,7 @@ services:
       - type: bind
         source: ${BLACKBIRD_MAC_WATCH_DIR:-./data/watch}
         target: /watch
+      - type: bind
+        source: ${BLACKBIRD_MAC_SESSION_DIR:-./data/session}
+        target: /data/session
+        read_only: true

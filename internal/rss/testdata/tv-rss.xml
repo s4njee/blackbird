@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example TV Tracker - RSS</title>
+    <link>https://tracker.example/browse</link>
+    <description>Latest TV uploads</description>
+    <item>
+      <title>Show.Name.S02E04.1080p.WEB.h264-EXAMPLE</title>
+      <link>https://tracker.example/torrents/918273</link>
+      <guid>https://tracker.example/torrents/918273</guid>
+      <enclosure url="https://tracker.example/download/918273/show.name.s02e04.torrent" length="73400320" type="application/x-bittorrent" />
+      <category>TV</category>
+      <category>HD</category>
+      <pubDate>Tue, 02 Sep 2026 14:12:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>Other.Show.S01E01.PILOT.720p.HDTV.x264-EXAMPLE</title>
+      <link>https://tracker.example/torrents/918200</link>
+      <guid>918200</guid>
+      <enclosure url="https://tracker.example/download/918200/other.show.s01e01.torrent" length="0" type="application/x-bittorrent" />
+      <category>TV</category>
+      <pubDate>Tue, 02 Sep 2026 13:02:44 +0000</pubDate>
+    </item>
+    <item>
+      <title>Linux Distro 12.4 x86_64 DVD</title>
+      <link>https://tracker.example/torrents/917999</link>
+      <enclosure url="magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&amp;dn=Linux+Distro" type="application/x-bittorrent" />
+      <category>Apps</category>
+      <pubDate>Tue, 02 Sep 2026 11:59:01 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

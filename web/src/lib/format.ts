@@ -2,6 +2,31 @@
 // formatters (internal/api/rest.go) so REST and WS data read identically.
 // Numeric rendering always emits tabular figures via the .tnum class at the
 // call site.
+//
+// Display preferences (POL-8.4, ui.date_format / ui.rate_format) live here as
+// module state fed at boot from /api/settings and previewed from Settings
+// drafts: every formatter below reads them, so all call sites follow without
+// plumbing options through the table.
+
+export type RateFormat = "binary" | "decimal";
+export type DateFormat = "local" | "iso";
+
+type FormatPrefs = { rateFormat: RateFormat; dateFormat: DateFormat };
+
+let prefs: FormatPrefs = { rateFormat: "binary", dateFormat: "local" };
+
+/** Overrides display preferences (boot hydration, draft preview, tests). */
+export function setFormatPrefs(next: Partial<FormatPrefs>) {
+  prefs = {
+    rateFormat: next.rateFormat ?? prefs.rateFormat,
+    dateFormat: next.dateFormat ?? prefs.dateFormat,
+  };
+}
+
+/** Current display preferences (tests and diagnostics). */
+export function formatPrefs(): FormatPrefs {
+  return { ...prefs };
+}
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
 
@@ -12,10 +37,11 @@ function trimFloat(v: number): string {
 
 /** Splits bytes into a value + unit pair, e.g. 41_200_000 → { value: "41.2", unit: "MB" }. */
 export function splitBytes(bytes: number): { value: string; unit: string } {
+  const divisor = prefs.rateFormat === "decimal" ? 1000 : 1024;
   let v = bytes;
   let i = 0;
-  while (v >= 1024 && i < BYTE_UNITS.length - 1) {
-    v /= 1024;
+  while (v >= divisor && i < BYTE_UNITS.length - 1) {
+    v /= divisor;
     i++;
   }
   return { value: trimFloat(v), unit: BYTE_UNITS[i] };
@@ -51,10 +77,12 @@ export function formatInteger(n: number): string {
   return Math.round(n).toLocaleString("en-US");
 }
 
-/** Compact date used by table cells: "12:04 today" or "Sep 2". */
+/** Compact date used by table cells: "12:04 today" or "Sep 2" locally,
+ * "2026-09-03 12:04" UTC in ISO mode. */
 export function formatDate(value: string | number | Date): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime()) || date.getTime() <= 0) return "—";
+  if (prefs.dateFormat === "iso") return date.toISOString().slice(0, 16).replace("T", " ");
   const now = new Date();
   if (date.toDateString() === now.toDateString()) {
     return `${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })} today`;

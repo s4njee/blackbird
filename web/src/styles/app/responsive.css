@@ -1,0 +1,237 @@
+/* ---- Responsive desktop floor (SHIP-1.2) ----
+   The console remains fully usable from 900px upward. At narrower desktop
+   widths the sidebar becomes an accessible icon rail, then the least useful
+   table columns are removed in the documented order. */
+@media (max-width: 1100px) {
+  .topbar {
+    gap: var(--sp-3);
+    padding: 0 var(--sp-4);
+  }
+  .sparkline {
+    display: none;
+  }
+  .filter {
+    width: 190px;
+  }
+  .sidebar {
+    width: 52px;
+  }
+  .sidebar-scroll {
+    padding: var(--sp-3) 0;
+  }
+  .sidebar-group + .sidebar-group {
+    margin: var(--sp-3) 0 0;
+    padding: var(--sp-3) 0 0;
+  }
+  .sidebar-group + .sidebar-group .sidebar-caption,
+  .sidebar-group + .sidebar-group .sidebar-item {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .sidebar-caption,
+  .sidebar-item-label,
+  .sidebar-count,
+  .label-dot,
+  .volume-footer {
+    display: none;
+  }
+  .sidebar-item {
+    justify-content: center;
+    height: 30px;
+    padding: 0;
+    border-left: 0;
+    border-right: 0;
+    color: var(--text-secondary);
+    font-size: 0;
+  }
+  .sidebar-item::before {
+    content: attr(data-short);
+    display: block;
+    color: var(--text-fainter);
+    font-size: var(--fs-meta);
+    font-weight: 500;
+    line-height: 30px;
+    text-align: center;
+  }
+  .sidebar-item:hover {
+    background: var(--bg-control);
+  }
+  .sidebar-item.active {
+    border-left: 2px solid var(--accent);
+    background: var(--accent-tint-strong);
+  }
+  .sidebar-item.active::before {
+    color: var(--text-primary);
+  }
+  .settings-nav {
+    width: 160px;
+  }
+  .setting-row {
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: var(--sp-5);
+  }
+  .settings-content {
+    padding-left: var(--sp-7);
+    padding-right: var(--sp-7);
+  }
+  .detail-facts {
+    width: 250px;
+  }
+}
+
+@media (max-width: 920px) {
+  .topbar {
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3);
+  }
+  .filter {
+    width: 160px;
+  }
+  .rates {
+    gap: var(--sp-3);
+  }
+  .toolbar {
+    overflow-x: auto;
+  }
+  .torrent-table {
+    min-width: 0;
+  }
+  .torrent-table col.col-tracker,
+  .torrent-table col.col-added,
+  .torrent-table col.col-ratio {
+    display: none;
+  }
+  .torrent-table th.col-tracker,
+  .torrent-table th.col-added,
+  .torrent-table th.col-ratio,
+  .torrent-table td.col-tracker,
+  .torrent-table td.col-added,
+  .torrent-table td.col-ratio {
+    display: none;
+  }
+  .detail-facts {
+    width: 190px;
+    padding-left: var(--sp-3);
+    padding-right: var(--sp-3);
+  }
+  .detail-tab {
+    padding-left: var(--sp-3);
+    padding-right: var(--sp-3);
+    font-size: var(--fs-meta);
+  }
+  .detail-title {
+    max-width: 220px;
+    margin-right: var(--sp-3);
+  }
+  .settings-nav {
+    width: 150px;
+  }
+  .setting-row {
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: var(--sp-4);
+  }
+  .settings-content {
+    padding: var(--sp-7) var(--sp-6) 70px;
+  }
+  .settings-footer {
+    margin-left: calc(var(--sp-6) * -1);
+    margin-right: calc(var(--sp-6) * -1);
+    padding-left: var(--sp-6);
+    padding-right: var(--sp-6);
+  }
+  .modal-backdrop {
+    padding: var(--sp-4);
+  }
+}
+
+/* Solid accent controls use a light foreground for the dark navy theme. */
+.btn-add,
+.settings-footer .settings-save,
+.modal-submit {
+  color: var(--accent-foreground);
+}
+
+.move-modal {
+  width: min(660px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-window);
+  background: var(--bg-chrome);
+  box-shadow: var(--shadow-modal);
+}
+.move-notice {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-control);
+  line-height: 1.5;
+}
+.move-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.move-shortcuts span {
+  width: 100%;
+  color: var(--text-ghost);
+  font-size: var(--fs-caption);
+  text-transform: uppercase;
+}
+.move-shortcuts button,
+.directory-browser button {
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.move-shortcuts button {
+  max-width: 100%;
+  padding: 4px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.directory-browser {
+  max-height: 176px;
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-control);
+  background: var(--bg-panel);
+}
+.directory-browser > div {
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: var(--sp-2);
+  background: var(--bg-control);
+}
+.directory-browser b {
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.directory-browser > button {
+  display: block;
+  width: calc(100% - var(--sp-4));
+  margin: var(--sp-2);
+  padding: 5px 7px;
+  text-align: left;
+}
+.directory-browser button:hover:not(:disabled),
+.move-shortcuts button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.directory-browser button:disabled,
+.move-shortcuts button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

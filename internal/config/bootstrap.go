@@ -49,14 +49,28 @@ func Bootstrap(dir string, rotate bool) (BootstrapResult, error) {
 		return BootstrapResult{}, fmt.Errorf("hash bootstrap password: %w", err)
 	}
 
+	// Rotating on a live deployment must replace the credential and nothing
+	// else: an operator who has been editing settings for months should not
+	// lose them to a password reset. Only a genuinely absent config gets the
+	// appliance defaults.
 	cfg := defaults()
-	cfg.Auth.Username = "admin"
+	if configExists {
+		existing, err := Load(configPath)
+		if err != nil {
+			return BootstrapResult{}, fmt.Errorf("load config for rotation: %w", err)
+		}
+		cfg = existing
+	} else {
+		cfg.RTorrent.SCGI = "tcp://rtorrent:5000"
+		cfg.Directories.Default = "/downloads"
+		cfg.Directories.Watch = WatchList{{Path: "/watch"}}
+		cfg.Directories.Session = "/data/session"
+		cfg.Volumes = []string{"/downloads"}
+	}
+	if cfg.Auth.Username == "" {
+		cfg.Auth.Username = "admin"
+	}
 	cfg.Auth.PasswordHash = string(hash)
-	cfg.RTorrent.SCGI = "tcp://rtorrent:5000"
-	cfg.Directories.Default = "/downloads"
-	cfg.Directories.Watch = "/watch"
-	cfg.Directories.Session = "/session"
-	cfg.Volumes = []string{"/downloads"}
 	if err := Save(configPath, cfg); err != nil {
 		return BootstrapResult{}, err
 	}
@@ -67,7 +81,7 @@ func Bootstrap(dir string, rotate bool) (BootstrapResult, error) {
 	if err := os.WriteFile(envPath, []byte(env), 0o600); err != nil {
 		return BootstrapResult{}, fmt.Errorf("write bootstrap env: %w", err)
 	}
-	return BootstrapResult{ConfigPath: configPath, EnvPath: envPath, Username: "admin", Password: password, Created: true}, nil
+	return BootstrapResult{ConfigPath: configPath, EnvPath: envPath, Username: cfg.Auth.Username, Password: password, Created: true}, nil
 }
 
 func fileExists(path string) bool {

@@ -1,0 +1,199 @@
+/* ---- PAR-2.5 tabs: General / Speed / Logger ---- */
+.general-tab {
+  height: 100%;
+  min-width: 560px;
+  overflow: auto;
+  padding: var(--sp-3) var(--sp-5);
+}
+.general-fact {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 62px;
+  gap: var(--sp-3);
+  align-items: center;
+  min-height: 30px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border-row-dim);
+  font-size: var(--fs-detail);
+}
+.general-label {
+  color: var(--text-fainter);
+  font-size: var(--fs-caption);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.general-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.copy-button {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.copy-button:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.speed-tab {
+  height: 100%;
+  min-width: 480px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-3) var(--sp-4);
+}
+.speed-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: var(--fs-header);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.speed-peak {
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.speed-chart {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  cursor: crosshair;
+}
+.speed-chart svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.speed-grid {
+  stroke: var(--bg-track);
+  stroke-width: 1;
+}
+.speed-down {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.speed-up {
+  fill: none;
+  stroke: var(--rate-up);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.speed-hover {
+  stroke: var(--text-faint);
+  stroke-dasharray: 2 3;
+}
+.speed-readout {
+  position: absolute;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  display: flex;
+  gap: var(--sp-4);
+  padding: 5px var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
+}
+.speed-readout b {
+  font-weight: 500;
+}
+.speed-readout b.down {
+  color: var(--accent-text);
+}
+.speed-readout b.up {
+  color: var(--rate-up-text);
+}
+.speed-footer {
+  flex: none;
+  color: var(--text-ghost);
+  font-size: var(--fs-meta);
+}
+.logger-tab {
+  height: 100%;
+  min-width: 560px;
+  display: flex;
+  flex-direction: column;
+}
+.logger-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-ghost);
+  font-size: var(--fs-caption);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.logger-header .copy-button {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.logger-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.logger-row {
+  display: grid;
+  grid-template-columns: 118px 64px 74px minmax(0, 1fr) auto;
+  gap: var(--sp-3);
+  align-items: baseline;
+  min-height: 28px;
+  padding: 3px var(--sp-4);
+  border-bottom: 1px solid var(--border-row-dim);
+  color: var(--text-secondary);
+  font-size: var(--fs-detail);
+}
+.logger-time {
+  color: var(--text-fainter);
+  font-variant-numeric: tabular-nums;
+}
+.logger-kind {
+  color: var(--text-ghost);
+  font-size: var(--fs-meta);
+  text-transform: uppercase;
+}
+.logger-kind.kind-message {
+  color: var(--status-warn);
+}
+.logger-actor {
+  color: var(--text-fainter);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.logger-action {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.logger-result {
+  color: var(--text-fainter);
+}
+.logger-result.failed {
+  color: var(--status-error);
+}

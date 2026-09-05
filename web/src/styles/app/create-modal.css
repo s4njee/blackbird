@@ -1,0 +1,90 @@
+/* ---- Create-torrent modal (PAR-5.4) ---- */
+.btn-create {
+  height: var(--h-button);
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-control);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-create:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.create-modal .add-options {
+  grid-template-columns: 1fr;
+}
+.create-modal .add-options textarea,
+.create-modal .add-options select {
+  width: 100%;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  outline: none;
+  background: var(--bg-panel);
+  color: var(--text-body);
+  font: inherit;
+  font-size: var(--fs-control);
+}
+.create-modal .add-options textarea {
+  padding: var(--sp-3);
+  resize: vertical;
+}
+.create-modal .add-options select {
+  height: var(--h-input);
+  padding: 0 var(--sp-3);
+}
+.create-modal .add-options textarea:focus,
+.create-modal .add-options select:focus {
+  border-color: var(--accent);
+}
+.create-status {
+  display: grid;
+  gap: var(--sp-3);
+}
+.create-status > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  color: var(--text-secondary);
+  font-size: var(--fs-control);
+}
+.create-status > div:first-child span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.create-status small {
+  color: var(--text-fainter);
+  font-size: var(--fs-meta);
+}
+.create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.create-actions button {
+  height: 28px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-control);
+  cursor: pointer;
+}
+.create-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.create-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-control);
+}

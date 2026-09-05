@@ -1,0 +1,398 @@
+/* ---- Add-torrent modal (Epic 7) ---- */
+.modal-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-7);
+  background: color-mix(in srgb, black 62%, transparent);
+}
+.add-modal {
+  width: min(660px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-window);
+  background: var(--bg-chrome);
+  box-shadow: var(--shadow-modal);
+}
+.modal-title {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-6);
+  border-bottom: 1px solid var(--border-default);
+}
+.modal-title h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-app-name);
+  font-weight: 600;
+}
+.modal-title button {
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-fainter);
+  font-size: 14px;
+  cursor: pointer;
+}
+.modal-title button:hover {
+  color: var(--text-primary);
+}
+/* In-app dialog system (POL-8.2): confirm / prompt / form dialogs share the
+backdrop and chrome with the intake modals. */
+.dialog {
+  width: min(460px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-window);
+  background: var(--bg-chrome);
+  box-shadow: var(--shadow-modal);
+}
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-6);
+}
+.dialog-body p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-control);
+  line-height: 1.55;
+}
+.dialog-details {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-control);
+  background: var(--bg-panel);
+  color: var(--text-faint);
+  font-size: var(--fs-meta);
+  line-height: 1.7;
+  list-style: none;
+}
+.dialog-details li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dialog-more {
+  color: var(--text-ghost);
+  font-size: var(--fs-meta);
+}
+.dialog-skip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-faint);
+  font-size: var(--fs-control);
+  cursor: pointer;
+}
+.dialog-skip input {
+  accent-color: var(--accent);
+}
+.dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.dialog-field > span {
+  color: var(--text-fainter);
+  font-size: var(--fs-header);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dialog-input {
+  height: var(--h-input);
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  outline: none;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-control);
+}
+.dialog-input:focus {
+  border-color: var(--accent);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-6) var(--sp-6);
+}
+.dialog-cancel,
+.dialog-confirm {
+  height: 28px;
+  padding: 0 var(--sp-6);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  background: var(--bg-control);
+  color: var(--text-body);
+  font: inherit;
+  font-size: var(--fs-control);
+  cursor: pointer;
+}
+.dialog-cancel:hover,
+.dialog-confirm:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+.dialog-confirm {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.dialog-confirm.danger {
+  border-color: var(--status-error);
+  background: transparent;
+  color: var(--status-error);
+}
+.dialog-confirm.danger:hover:not(:disabled) {
+  border-color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+}
+.dialog-confirm:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.dialog-cancel:focus-visible,
+.dialog-confirm:focus-visible,
+.dialog-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.add-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  padding: var(--sp-7) var(--sp-6);
+}
+.add-segments {
+  width: fit-content;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+}
+.add-segments button {
+  height: 28px;
+  padding: 0 var(--sp-6);
+  border: 0;
+  border-left: 1px solid var(--border-control);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-control);
+  cursor: pointer;
+}
+.add-segments button:first-child {
+  border-left: 0;
+}
+.add-segments button.active {
+  background: var(--bg-control-active);
+  color: var(--text-primary);
+}
+.link-source label,
+.add-options label > span {
+  display: block;
+  margin-bottom: var(--sp-2);
+  color: var(--text-fainter);
+  font-size: var(--fs-header);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.link-source textarea {
+  width: 100%;
+  height: 78px;
+  resize: vertical;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  outline: none;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-control);
+  line-height: 1.6;
+}
+.link-source textarea:focus,
+.add-options input:focus {
+  border-color: var(--accent);
+}
+.link-source textarea::placeholder {
+  color: var(--text-ghost);
+}
+.input-error {
+  margin: var(--sp-2) 0 0;
+  color: var(--status-error);
+  font-size: var(--fs-meta);
+}
+.input-error b {
+  font-weight: 500;
+}
+.file-picker {
+  display: none;
+}
+.torrent-dropzone {
+  width: 100%;
+  min-height: 86px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-card);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.torrent-dropzone b {
+  font-size: var(--fs-cell);
+  font-weight: 400;
+}
+.torrent-dropzone span {
+  color: var(--text-ghost);
+  font-size: var(--fs-meta);
+}
+.torrent-dropzone.dragging,
+.torrent-dropzone:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.queued-file {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-control);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: var(--fs-control);
+}
+.queued-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queued-file button {
+  margin-left: auto;
+  padding: 0 0 0 var(--sp-3);
+  border: 0;
+  background: transparent;
+  color: var(--text-fainter);
+  cursor: pointer;
+}
+.add-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-5);
+}
+.add-options input {
+  width: 100%;
+  height: var(--h-input);
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--r-control);
+  outline: none;
+  background: var(--bg-panel);
+  color: var(--text-body);
+  font: inherit;
+  font-size: var(--fs-control);
+}
+.add-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-8);
+  color: var(--text-secondary);
+  font-size: var(--fs-control);
+}
+.add-checkboxes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.add-checkboxes input {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.add-results {
+  overflow: auto;
+  max-height: 112px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-control);
+  background: var(--bg-panel);
+}
+.add-results > div {
+  display: flex;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-row-dim);
+  font-size: var(--fs-meta);
+}
+.add-results > div:last-child {
+  border-bottom: 0;
+}
+.add-results span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.add-results b {
+  margin-left: auto;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.add-results .success b {
+  color: var(--progress-complete);
+}
+.add-results .failure b {
+  color: var(--status-error);
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-5) var(--sp-6);
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-row-alt);
+}
+.modal-footer button {
+  height: 28px;
+  padding: 0 var(--sp-5);
+  border-radius: var(--r-control);
+  font: inherit;
+  font-size: var(--fs-control);
+  cursor: pointer;
+}
+.modal-cancel {
+  border: 1px solid var(--border-control);
+  background: var(--bg-control);
+  color: var(--text-secondary);
+}
+.modal-submit {
+  border: 0;
+  background: var(--accent);
+  color: var(--bg-canvas);
+  font-weight: 600;
+}
+.modal-submit:disabled {
+  background: var(--state-disabled);
+  color: var(--text-ghost);
+  cursor: default;
+}

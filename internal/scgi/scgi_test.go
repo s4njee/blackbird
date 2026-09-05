@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -79,8 +80,14 @@ func (s *fakeServer) callNames() []string {
 
 func startFakeServer(t *testing.T, respond func(string, []xmlrpc.Value) []byte) *fakeServer {
 	t.Helper()
-	dir := t.TempDir()
-	sock := filepath.Join(dir, "rtorrent.sock") // short enough for darwin/linux
+	// Short socket dir: darwin caps sun_path at 104 bytes and t.TempDir()
+	// embeds long test names.
+	dir, err := os.MkdirTemp("", "scgi-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "rtorrent.sock")
 	// darwin limits sun_path to 104 bytes; t.TempDir paths are fine here.
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
@@ -208,4 +215,88 @@ func TestConcurrentCalls(t *testing.T) {
 
 func bytesReader(b []byte) *strings.Reader {
 	return strings.NewReader(string(b))
+}
+
+// TestResponseSizeLimit proves reads stay bounded: a response over the cap
+// aborts with a typed error, while one under it passes through untouched.
+func TestResponseSizeLimit(t *testing.T) {
+	big := `<?xml version="1.0"?><methodResponse><params><param><value><string>` +
+		strings.Repeat("x", 3000) + `</string></value></param></params></methodResponse>`
+	srv := startFakeServer(t, func(string, []xmlrpc.Value) []byte { return []byte(big) })
+	c, _ := New("unix://"+srv.listener.Addr().String(), 2*time.Second)
+	c.MaxResponseBytes = 1024
+
+	_, err := c.Call(context.Background(), "big", nil)
+	var tooLarge *TooLargeError
+	if !errors.As(err, &tooLarge) {
+		t.Fatalf("err = %v (%T), want *TooLargeError", err, err)
+	}
+	if tooLarge.Limit != 1024 {
+		t.Fatalf("limit = %d", tooLarge.Limit)
+	}
+
+	c.MaxResponseBytes = int64(len(big) + 16)
+	vals, err := c.Call(context.Background(), "big", nil)
+	if err != nil {
+		t.Fatalf("under-limit call failed: %v", err)
+	}
+	if len(vals) != 1 || len(vals[0].Str) != 3000 {
+		t.Fatalf("vals = %d values", len(vals))
+	}
+}
+
+// TestDefaultSizeLimitIs64MB pins the out-of-the-box cap.
+func TestDefaultSizeLimitIs64MB(t *testing.T) {
+	if DefaultMaxResponseBytes != 64<<20 {
+		t.Fatalf("default = %d", DefaultMaxResponseBytes)
+	}
+	c, _ := New("unix:///tmp/blackbird-test-sock", 2*time.Second)
+	if c.MaxResponseBytes != 0 {
+		t.Fatalf("zero value must mean default, got %d", c.MaxResponseBytes)
+	}
+}
+
+// TestTimeoutIsTyped proves a stalled daemon surfaces *TimeoutError (still
+// matching errors.Is DeadlineExceeded) rather than a generic failure.
+func TestTimeoutIsTyped(t *testing.T) {
+	srv := startFakeServer(t, func(string, []xmlrpc.Value) []byte {
+		time.Sleep(300 * time.Millisecond)
+		return []byte(`<?xml version="1.0"?><methodResponse><params><param><value><string>late</string></value></param></params></methodResponse>`)
+	})
+	c, _ := New("unix://"+srv.listener.Addr().String(), 50*time.Millisecond)
+	_, err := c.Call(context.Background(), "slow", nil)
+	var timeout *TimeoutError
+	if !errors.As(err, &timeout) {
+		t.Fatalf("err = %v (%T), want *TimeoutError", err, err)
+	}
+	if timeout.Op != "read" {
+		t.Fatalf("op = %q, want read", timeout.Op)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want errors.Is DeadlineExceeded", err)
+	}
+}
+
+// TestCancellationIsNotTimeout proves a caller-cancelled dial keeps its own
+// identity instead of being misreported as a daemon timeout. (In-flight
+// reads run to the call deadline by design; only the dial observes the
+// context, plus the connection-slot wait.)
+func TestCancellationIsNotTimeout(t *testing.T) {
+	srv := startFakeServer(t, func(string, []xmlrpc.Value) []byte {
+		return []byte(`<methodResponse/>`)
+	})
+	c, _ := New("unix://"+srv.listener.Addr().String(), 5*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := c.Call(ctx, "slow", nil)
+	if err == nil {
+		t.Fatal("expected cancellation error")
+	}
+	var timeout *TimeoutError
+	if errors.As(err, &timeout) {
+		t.Fatalf("cancellation misreported as timeout: %v", err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
 }

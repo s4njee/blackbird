@@ -52,7 +52,7 @@ func TestErrorForTransportError(t *testing.T) {
 // faults as a structured 502 rather than a generic error.
 func TestDetailEndpointFaultStructured(t *testing.T) {
 	st := newTestStack(t, "", fakertorrent.Options{Fail: &fakertorrent.Failure{
-		Method:  "d.multicall2",
+		Method:  "system.multicall",
 		Hashes:  []string{"aaaa1111aaaa1111"},
 		Message: "no such torrent",
 	}})

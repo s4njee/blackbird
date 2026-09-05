@@ -60,6 +60,32 @@ auth:
 	}
 }
 
+// TestUIPollIntervalDeprecatedWarns proves the POL-8.4 migration: a set
+// ui.poll_interval loads fine (read-compatible) but warns that it is ignored.
+func TestUIPollIntervalDeprecatedWarns(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(path, []byte("ui:\n  poll_interval: 5s\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.UI.PollInterval != "5s" {
+		t.Fatalf("poll_interval was not preserved: %q", cfg.UI.PollInterval)
+	}
+	found := false
+	for _, w := range cfg.Warnings {
+		if strings.Contains(w, "ui.poll_interval") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no ui.poll_interval warning in %+v", cfg.Warnings)
+	}
+}
+
 func TestVisibleColumnsMigratesToLayout(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
@@ -255,6 +281,381 @@ ui:
 	}
 }
 
+func TestValidateAutomationRules(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	bad := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+automation:
+  on_complete:
+    - name: "no-actions"
+      label: "iso"
+    - name: "bad-regex"
+      name_regex: "(unclosed"
+      set_label: "x"
+    - name: "bad-sizes"
+      min_size: 100
+      max_size: 50
+      webhook: "not-a-url"
+    - name: "relative-move"
+      move_to: "relative/path"
+      set_label: "x"
+    - label: "missing-name"
+      set_label: "x"
+`
+	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"automation.on_complete.[0]", "must define at least one action",
+		"automation.on_complete.[1].name_regex",
+		"automation.on_complete.[2].max_size",
+		"automation.on_complete.[2].webhook",
+		"automation.on_complete.[3].move_to",
+		"automation.on_complete.[4].name",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q:\n%s", want, msg)
+		}
+	}
+
+	// A valid rule list loads cleanly and round-trips through Save.
+	good := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+automation:
+  on_complete:
+    - name: "tv"
+      label: "tv"
+      name_regex: "^Show\\.S\\d\\d"
+      private: true
+      min_size: 1
+      max_size: 20000000000
+      set_label: "tv-done"
+      move_to: "/mnt/data/tv"
+      add_tracker: "udp://tracker.example:1337/announce"
+      webhook: "https://hooks.example/blackbird"
+`
+	if err := os.WriteFile(path, []byte(good), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("valid rules rejected: %v", err)
+	}
+	if len(cfg.Automation.OnComplete) != 1 {
+		t.Fatalf("rules = %+v", cfg.Automation.OnComplete)
+	}
+	rule := cfg.Automation.OnComplete[0]
+	if rule.Name != "tv" || !rule.HasActions() || rule.Private == nil || !*rule.Private {
+		t.Fatalf("rule = %+v", rule)
+	}
+}
+
+func TestValidateRSSConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	bad := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+automation:
+  rss:
+    feeds:
+      - name: ""
+        url: "not-a-url"
+        poll_interval: -5s
+      - name: "dup"
+        url: "https://feeds.example/rss"
+      - name: "dup"
+        url: "ftp://feeds.example/rss"
+    filters:
+      - name: ""
+        feed: "missing"
+        title_regex: "("
+        min_size: 100
+        max_size: 50
+`
+	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"automation.rss.feeds.[0].name",
+		"automation.rss.feeds.[0].url",
+		"automation.rss.feeds.[0].poll_interval",
+		"automation.rss.feeds.[2].name",
+		"automation.rss.feeds.[2].url",
+		"automation.rss.filters.[0].name",
+		"automation.rss.filters.[0].feed",
+		"automation.rss.filters.[0].title_regex",
+		"automation.rss.filters.[0].max_size",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q:\n%s", want, msg)
+		}
+	}
+
+	good := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+automation:
+  rss:
+    feeds:
+      - name: "tv"
+        url: "https://tracker.example/rss?passkey=SECRET"
+        poll_interval: 10m
+        label: "tv"
+        destination: "/mnt/data/tv"
+        cookies: "uid=7"
+        headers:
+          Authorization: "Bearer TOKEN"
+    filters:
+      - name: "shows"
+        feed: "tv"
+        title_regex: "^Show\\\\.S\\\\d\\\\d"
+        category: "TV"
+        min_size: 1
+        max_size: 20000000000
+        label: "tv-done"
+`
+	if err := os.WriteFile(path, []byte(good), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("valid rss config rejected: %v", err)
+	}
+	if len(cfg.Automation.Rss.Feeds) != 1 || len(cfg.Automation.Rss.Filters) != 1 {
+		t.Fatalf("rss = %+v", cfg.Automation.Rss)
+	}
+	feed := cfg.Automation.Rss.Feeds[0]
+	if feed.EffectivePollInterval() != 10*time.Minute || feed.Cookies != "uid=7" || feed.Headers["Authorization"] != "Bearer TOKEN" {
+		t.Fatalf("feed = %+v", feed)
+	}
+	if cfg.Automation.Rss.Feeds[0].PollInterval != 10*time.Minute {
+		t.Fatalf("poll interval not parsed as duration: %v", cfg.Automation.Rss.Feeds[0].PollInterval)
+	}
+}
+
+func TestValidateUnpackConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	bad := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+automation:
+  unpack:
+    workers: 99
+    timeout: -5m
+    rules:
+      - name: ""
+        destination: "relative/path"
+      - name: "dup"
+      - name: "dup"
+`
+	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"automation.unpack.workers",
+		"automation.unpack.timeout",
+		"automation.unpack.rules.[0].name",
+		"automation.unpack.rules.[0].destination",
+		"automation.unpack.rules.[2].name",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q:\n%s", want, msg)
+		}
+	}
+
+	good := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+automation:
+  unpack:
+    workers: 3
+    timeout: 1h
+    rules:
+      - name: "tv"
+        label: "tv"
+        destination: "/mnt/data/tv"
+        delete_archives: true
+`
+	if err := os.WriteFile(path, []byte(good), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("valid unpack config rejected: %v", err)
+	}
+	unpack := cfg.Automation.Unpack
+	if unpack.EffectiveWorkers() != 3 || unpack.EffectiveTimeout() != time.Hour {
+		t.Fatalf("unpack = %+v", unpack)
+	}
+	if !unpack.Rules[0].Matches("TV") || unpack.Rules[0].Matches("movies") {
+		t.Fatalf("rule = %+v", unpack.Rules[0])
+	}
+	if def := (UnpackConfig{}); def.EffectiveWorkers() != 2 || def.EffectiveTimeout() != 30*time.Minute {
+		t.Fatalf("defaults = %d, %v", def.EffectiveWorkers(), def.EffectiveTimeout())
+	}
+}
+
+func TestValidateThrottleChannels(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	bad := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+tuning:
+  throttles:
+    - name: ""
+      up_kb: -5
+    - name: "NULL"
+      up_kb: 10
+    - name: "slow"
+      up_kb: 100
+      down_kb: 500
+    - name: "slow"
+      up_kb: 1
+`
+	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"tuning.throttles.[0].name",
+		"tuning.throttles.[0]",
+		"tuning.throttles.[1].name",
+		"tuning.throttles.[3].name",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q:\n%s", want, msg)
+		}
+	}
+
+	good := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+tuning:
+  global_up_rate_kb: 0
+  throttles:
+    - name: "slow"
+      up_kb: 100
+      down_kb: 500
+    - name: "seed"
+`
+	if err := os.WriteFile(path, []byte(good), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("valid throttles rejected: %v", err)
+	}
+	if len(cfg.Tuning.Throttles) != 2 || cfg.Tuning.Throttles[0].UpKB != 100 || cfg.Tuning.Throttles[1].DownKB != 0 {
+		t.Fatalf("throttles = %+v", cfg.Tuning.Throttles)
+	}
+}
+
+func TestValidateSchedule(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	bad := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+schedule:
+  timezone: "Mars/Olympus"
+  bandwidth:
+    profiles:
+      - name: ""
+        color: "red"
+        down_kb: -5
+        throttles:
+          - name: "NULL"
+          - name: "slow"
+          - name: "slow"
+      - name: "day"
+        color: "#f59e0b"
+    grid:
+      mon: ["day"]
+      frobnicate: ["day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day", "day"]
+      tue: ["ghost", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+`
+	if err := os.WriteFile(path, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"schedule.timezone",
+		"schedule.bandwidth.profiles.[0].name",
+		"schedule.bandwidth.profiles.[0].color",
+		"schedule.bandwidth.profiles.[0]",
+		"schedule.bandwidth.profiles.[0].throttles.[0].name",
+		"schedule.bandwidth.profiles.[0].throttles.[2].name",
+		"schedule.bandwidth.grid.mon",
+		"schedule.bandwidth.grid.tue.[0]",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q:\n%s", want, msg)
+		}
+	}
+	// Note: unknown day keys ("frobnicate") are ignored, not errors.
+
+	good := `
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+schedule:
+  timezone: "America/Chicago"
+  bandwidth:
+    profiles:
+      - name: "day"
+        color: "#f59e0b"
+        down_kb: 1000
+        up_kb: 500
+        throttles:
+          - name: slow
+            up_kb: 100
+            down_kb: 200
+      - name: "night"
+        down_kb: 0
+        up_kb: 0
+    grid:
+      mon: ["night", "night", "night", "night", "night", "night", "night", "night", "night", "day", "day", "day", "day", "day", "day", "day", "day", "night", "night", "night", "night", "night", "night", "night"]
+`
+	if err := os.WriteFile(path, []byte(good), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("valid schedule rejected: %v", err)
+	}
+	if len(cfg.Schedule.Bandwidth.Profiles) != 2 || len(cfg.Schedule.Bandwidth.Grid["mon"]) != 24 {
+		t.Fatalf("schedule = %+v", cfg.Schedule.Bandwidth)
+	}
+}
+
 func TestSaveRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
@@ -337,3 +738,52 @@ func TestExampleIsValid(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 func ptr(n int) *int          { return &n }
+
+func TestValidatePollAndResponseBounds(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	write := func(body string) error {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(path)
+		return err
+	}
+	bad := `
+poll:
+  interval: 2s
+  max_interval: 1s
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+  max_response_bytes: -1
+`
+	if err := write(bad); err == nil {
+		t.Fatal("expected error for max_interval < interval and negative max_response_bytes")
+	} else {
+		msg := err.Error()
+		for _, want := range []string{"poll.max_interval", "rtorrent.max_response_bytes"} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("error missing %q:\n%s", want, msg)
+			}
+		}
+	}
+	good := `
+poll:
+  interval: 2s
+  max_interval: 30s
+rtorrent:
+  scgi: "unix:///tmp/rt.sock"
+  max_response_bytes: 134217728
+`
+	if err := write(good); err != nil {
+		t.Fatalf("valid bounds rejected: %v", err)
+	}
+	// Defaults apply when unset: 30s idle cap.
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Poll.EffectiveMaxInterval() != 30*time.Second {
+		t.Fatalf("effective max interval = %v", cfg.Poll.EffectiveMaxInterval())
+	}
+}

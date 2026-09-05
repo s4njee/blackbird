@@ -6,6 +6,9 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -126,6 +129,10 @@ func TestDetailActions(t *testing.T) {
 		{"action": "tracker_add", "hashes": []string{"aaaa1111aaaa1111"}, "trackerUrl": "https://tracker.example/announce"},
 		{"action": "tracker_enable", "hashes": []string{"aaaa1111aaaa1111"}, "trackerIndex": 0, "enabled": false},
 		{"action": "reannounce", "hashes": []string{"aaaa1111aaaa1111"}},
+		{"action": "peer_ban", "hashes": []string{"aaaa1111aaaa1111"}, "peerId": "peer1xyz"},
+		{"action": "peer_snub", "hashes": []string{"aaaa1111aaaa1111"}, "peerId": "peer1xyz"},
+		{"action": "peer_unsnub", "hashes": []string{"aaaa1111aaaa1111"}, "peerId": "peer1xyz"},
+		{"action": "peer_disconnect", "hashes": []string{"aaaa1111aaaa1111"}, "peerId": "peer1xyz"},
 	} {
 		resp, out := postJSON(t, ts.URL+"/api/torrents/action", body)
 		if resp.StatusCode != http.StatusOK {
@@ -141,6 +148,14 @@ func TestDetailActions(t *testing.T) {
 	})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("incomplete file_priority status = %d, want 400", resp.StatusCode)
+	}
+
+	// Peer moderation requires a peerId.
+	resp, out := postJSON(t, ts.URL+"/api/torrents/action", map[string]any{
+		"action": "peer_ban", "hashes": []string{"aaaa1111aaaa1111"},
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("missing peerId status = %d: %+v", resp.StatusCode, out)
 	}
 }
 
@@ -247,6 +262,118 @@ func TestDetailEndpoint(t *testing.T) {
 	}
 	if d.Hash != "aaaa1111aaaa1111" || len(d.Files) == 0 {
 		t.Fatalf("detail = %+v", d)
+	}
+}
+
+func TestLoggerViewRecordsActions(t *testing.T) {
+	ts, _ := newTestAPI(t, "")
+	// Perform an action, then read the logger view for that hash.
+	postJSON(t, ts.URL+"/api/torrents/action", map[string]any{
+		"action": "start", "hashes": []string{"aaaa1111aaaa1111"},
+	})
+	resp, err := http.Get(ts.URL + "/api/torrents/aaaa1111aaaa1111?view=logger")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var lr struct {
+		Hash    string `json:"hash"`
+		Entries []struct {
+			Kind   string `json:"kind"`
+			Actor  string `json:"actor"`
+			Action string `json:"action"`
+			Result string `json:"result"`
+		} `json:"entries"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
+		t.Fatal(err)
+	}
+	if lr.Hash != "aaaa1111aaaa1111" {
+		t.Fatalf("hash = %q", lr.Hash)
+	}
+	found := false
+	for _, e := range lr.Entries {
+		if e.Kind == "action" && e.Action == "start" && e.Actor == "local" && e.Result == "ok" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("start action not logged: %+v", lr.Entries)
+	}
+}
+
+func TestSpeedViewReturnsSamples(t *testing.T) {
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+	st.p.Focus("aaaa1111aaaa1111")
+
+	// Wait for a few poll cycles to sample the focused ring.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(st.ts.URL + "/api/torrents/aaaa1111aaaa1111?view=speed")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sr struct {
+			Hash    string `json:"hash"`
+			Samples []struct {
+				At       string `json:"at"`
+				DownRate int64  `json:"downRate"`
+				UpRate   int64  `json:"upRate"`
+			} `json:"samples"`
+		}
+		decErr := json.NewDecoder(resp.Body).Decode(&sr)
+		resp.Body.Close()
+		if decErr != nil {
+			t.Fatal(decErr)
+		}
+		if len(sr.Samples) >= 2 {
+			if sr.Hash != "aaaa1111aaaa1111" || sr.Samples[len(sr.Samples)-1].At == "" {
+				t.Fatalf("speed = %+v", sr)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("speed samples never accumulated for focused hash")
+}
+
+func TestGeneralViewIncludesMetaFromAdd(t *testing.T) {
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+	ts := st.ts
+
+	// Add a .torrent with a comment + created-by; metadata is captured by hash.
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("files", "commented.torrent")
+	// Bencode: d 8:comment 12:Hello world 10:created by 13:SomeTool 1.0 4:info d4:name1:x 6:length i1e e e
+	fw.Write([]byte("d8:comment12:Hello world10:created by13:SomeTool 1.04:infod4:name1:x6:lengthi1eee"))
+	mw.Close()
+	postResp, err := http.Post(ts.URL+"/api/torrents/add", mw.FormDataContentType(), &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postResp.Body.Close()
+
+	// General view for a focused torrent: comment metadata should surface if
+	// the add correlated to a hash; use the fixture hash for the session row.
+	resp, err := http.Get(ts.URL + "/api/torrents/aaaa1111aaaa1111?view=general")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var gr struct {
+		Facts []struct {
+			Label string `json:"label"`
+			Value string `json:"value"`
+		} `json:"facts"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&gr); err != nil {
+		t.Fatal(err)
+	}
+	if len(gr.Facts) == 0 {
+		t.Fatal("general facts empty")
 	}
 }
 
@@ -615,7 +742,7 @@ func TestSettingsSaveYAMLBackedSectionsAndExecute(t *testing.T) {
 	waitForConnected(t, st.p)
 	payload := map[string]any{
 		"tuning":      map[string]any{},
-		"directories": map[string]any{"default": "/mnt/data/downloads", "per_label": map[string]string{"iso": "/mnt/data/iso"}, "watch": "/mnt/watch", "watch_label": "iso", "session": "/mnt/session"},
+		"directories": map[string]any{"default": "/mnt/data/downloads", "per_label": map[string]string{"iso": "/mnt/data/iso"}, "watch": []map[string]any{{"path": "/mnt/watch", "label": "iso", "delete_after_load": true}}, "session": "/mnt/session"},
 		"labels":      []map[string]string{{"name": "iso", "color": "#f59e0b"}},
 		"ui":          map[string]any{"accent": "#2f9dff", "visible_columns": []string{"name", "status"}, "sort": map[string]string{"column": "name", "dir": "asc"}},
 	}
@@ -624,9 +751,17 @@ func TestSettingsSaveYAMLBackedSectionsAndExecute(t *testing.T) {
 		t.Fatalf("save YAML settings = %d %+v", resp.StatusCode, body)
 	}
 	got := st.store.Get()
-	if got.Directories.Watch != "/mnt/watch" || got.Directories.PerLabel["iso"] != "/mnt/data/iso" || got.UI.Accent != "#2f9dff" || len(got.Labels) != 1 {
+	watch := got.Directories.Watch
+	if len(watch) != 1 || watch[0].Path != "/mnt/watch" || watch[0].Label != "iso" || !watch[0].DeleteAfterLoad || !watch[0].Starts() ||
+		got.Directories.PerLabel["iso"] != "/mnt/data/iso" || got.UI.Accent != "#2f9dff" || len(got.Labels) != 1 {
 		t.Fatalf("settings were not persisted: %+v", got)
 	}
+	// Raw XML-RPC is opt-in: refused until the deployment enables it.
+	resp, _ = postJSON(t, st.ts.URL+"/api/settings/execute", map[string]any{"method": "d.tracker_announce"})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("execute before opt-in = %d, want 403", resp.StatusCode)
+	}
+	st.store.cfg.Server.AllowExecute = true
 
 	resp, body = postJSON(t, st.ts.URL+"/api/settings/execute", map[string]any{"method": "d.tracker_announce", "params": []string{"aaaa1111aaaa1111"}})
 	if resp.StatusCode != http.StatusOK || body["ok"] != true {
@@ -635,6 +770,39 @@ func TestSettingsSaveYAMLBackedSectionsAndExecute(t *testing.T) {
 	resp, _ = postJSON(t, st.ts.URL+"/api/settings/execute", map[string]any{"method": "bad method"})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid execute status = %d, want 400", resp.StatusCode)
+	}
+}
+
+// TestExecuteDeniesCommandRunningMethods covers the families that stay
+// blocked even with server.allow_execute on. The escape hatch exists to
+// reach daemon settings; execute2 is a shell. Keeping these out means a
+// future gap in the auth or origin checks cannot escalate to running
+// commands on the daemon host.
+func TestExecuteDeniesCommandRunningMethods(t *testing.T) {
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+	st.store.cfg.Server.AllowExecute = true
+
+	for _, method := range []string{
+		"execute", "execute2", "execute.throw", "execute.capture",
+		"system.method.set", "system.method.insert",
+		"import", "try_import", "schedule2",
+		"EXECUTE2", // the check is case-insensitive
+	} {
+		resp, body := postJSON(t, st.ts.URL+"/api/settings/execute", map[string]any{
+			"method": method, "params": []string{"", "rm -rf /"},
+		})
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("%s: status = %d, want 403 (body %+v)", method, resp.StatusCode, body)
+		}
+	}
+
+	// An ordinary daemon method still works.
+	resp, body := postJSON(t, st.ts.URL+"/api/settings/execute", map[string]any{
+		"method": "d.tracker_announce", "params": []string{"aaaa1111aaaa1111"},
+	})
+	if resp.StatusCode != http.StatusOK || body["ok"] != true {
+		t.Fatalf("ordinary method refused: %d %+v", resp.StatusCode, body)
 	}
 }
 
@@ -673,5 +841,188 @@ func TestStatsLabelUsageBuckets(t *testing.T) {
 	// The broken torrent has no label → unlabeled bucket with count 1.
 	if last := stats.LabelUsage[len(stats.LabelUsage)-1]; last.Label != "unlabeled" || last.Count != 1 {
 		t.Fatalf("unlabeled bucket = %+v", last)
+	}
+}
+
+func TestRenameActionAndCapabilities(t *testing.T) {
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+
+	// The fake daemon claims rename support and acks d.name.set.
+	resp, body := postJSON(t, st.ts.URL+"/api/torrents/action", map[string]any{
+		"action": "rename", "hashes": []string{"aaaa1111aaaa1111"}, "name": "Renamed ISO",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("rename status = %d: %+v", resp.StatusCode, body)
+	}
+	results := body["results"].([]any)
+	if !results[0].(map[string]any)["ok"].(bool) {
+		t.Fatalf("rename result = %+v", results[0])
+	}
+
+	// Missing name → 400.
+	resp, _ = postJSON(t, st.ts.URL+"/api/torrents/action", map[string]any{
+		"action": "rename", "hashes": []string{"aaaa1111aaaa1111"},
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("rename without name status = %d, want 400", resp.StatusCode)
+	}
+
+	// Capabilities surface rename availability in the settings payload.
+	resp, err := http.Get(st.ts.URL + "/api/settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var settings struct {
+		Capabilities struct {
+			Rename bool `json:"rename"`
+		} `json:"capabilities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&settings); err != nil {
+		t.Fatal(err)
+	}
+	if !settings.Capabilities.Rename {
+		t.Fatal("capabilities.rename should be true against the fake daemon")
+	}
+}
+
+// TestTorrentFileRejectsPathTraversal covers the session-directory escape:
+// ServeMux unescapes the {hash} wildcard, so "%2f" reaches the handler as a
+// real separator. Only hex infohashes may reach filepath.Join.
+func TestTorrentFileRejectsPathTraversal(t *testing.T) {
+	base := t.TempDir()
+	sessionDir := filepath.Join(base, "session")
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	secret := []byte("TOP-SECRET-NOT-A-TORRENT")
+	if err := os.WriteFile(filepath.Join(base, "secret.torrent"), secret, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+	st.store.cfg.Directories.Session = sessionDir
+
+	for _, escape := range []string{"..%2fsecret", "%2e%2e%2fsecret", "..%2F..%2Fsecret"} {
+		resp, err := http.Get(st.ts.URL + "/api/torrent-file/" + escape)
+		if err != nil {
+			t.Fatalf("%s: %v", escape, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			t.Fatalf("%s: served %d, expected refusal", escape, resp.StatusCode)
+		}
+		if strings.Contains(string(body), "TOP-SECRET") {
+			t.Fatalf("%s: leaked a file outside the session directory", escape)
+		}
+	}
+}
+
+func TestTorrentFileDownload(t *testing.T) {
+	// Point the store's session dir at a temp dir with a fixture .torrent.
+	dir := t.TempDir()
+	hash := "aaaa1111aaaa1111"
+	content := []byte("d4:infod4:name1:xe")
+	if err := os.WriteFile(filepath.Join(dir, strings.ToUpper(hash)+".torrent"), content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+	st.store.cfg.Directories.Session = dir
+
+	resp, err := http.Get(st.ts.URL + "/api/torrent-file/" + hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/x-bittorrent" {
+		t.Fatalf("content-type = %q", ct)
+	}
+	if cd := resp.Header.Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") {
+		t.Fatalf("content-disposition = %q", cd)
+	}
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("body = %q, want %q", got, content)
+	}
+
+	// Unknown hash → clean 404 without exposing the session dir.
+	resp2, err := http.Get(st.ts.URL + "/api/torrent-file/deadbeef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing torrent status = %d, want 404", resp2.StatusCode)
+	}
+}
+
+func TestOpenDirectoryURL(t *testing.T) {
+	base := "/mnt/data/iso/My File.iso"
+	// Template with {path} placeholder.
+	got := openDirectoryURL("https://files.example.com/browse?path={path}", base)
+	want := "https://files.example.com/browse?path=" + url.QueryEscape(base)
+	if got != want {
+		t.Fatalf("template URL = %q, want %q", got, want)
+	}
+	// No template → "" (copy path instead).
+	if openDirectoryURL("", base) != "" {
+		t.Fatal("empty template should return empty URL")
+	}
+	// Template without placeholder appends the escaped path.
+	got = openDirectoryURL("https://files.example.com/open/", base)
+	if got != "https://files.example.com/open/"+url.QueryEscape(base) {
+		t.Fatalf("append URL = %q", got)
+	}
+}
+
+// TestSettingsSaveWithoutTuningKeepsTuning covers a partial settings body.
+// "tuning" is optional like every other section, so omitting it must leave
+// the persisted tuning keys alone. It used to be a value type assigned
+// unconditionally, so any partial save zeroed every tuning key on disk —
+// and because the resulting diff was empty, the daemon kept running the old
+// values and the loss stayed invisible until the next restart.
+func TestSettingsSaveWithoutTuningKeepsTuning(t *testing.T) {
+	st := newTestStack(t, "", fakertorrent.Options{})
+	waitForConnected(t, st.p)
+	ts := st.ts
+
+	up := float64(20480)
+	resp, body := postJSON(t, ts.URL+"/api/settings", map[string]any{
+		"tuning": map[string]any{"global_up_rate_kb": up},
+	})
+	if resp.StatusCode != http.StatusOK || body["saved"] != true {
+		t.Fatalf("seed save: status=%d body=%v", resp.StatusCode, body)
+	}
+
+	// A body that omits "tuning" entirely.
+	resp, body = postJSON(t, ts.URL+"/api/settings", map[string]any{
+		"ui": map[string]any{"theme": "light"},
+	})
+	if resp.StatusCode != http.StatusOK || body["saved"] != true {
+		t.Fatalf("partial save: status=%d body=%v", resp.StatusCode, body)
+	}
+
+	getResp, err := http.Get(ts.URL + "/api/settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var get struct {
+		Tuning map[string]any `json:"tuning"`
+	}
+	if err := json.NewDecoder(getResp.Body).Decode(&get); err != nil {
+		t.Fatal(err)
+	}
+	getResp.Body.Close()
+	if got := get.Tuning["global_up_rate_kb"]; got != up {
+		t.Fatalf("partial save wiped tuning: global_up_rate_kb = %v, want %v", got, up)
 	}
 }

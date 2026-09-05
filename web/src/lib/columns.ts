@@ -24,7 +24,13 @@ export const COLUMN_DEFINITIONS = [
   { key: "creationDate", label: "Created", class: "col-created", minWidth: 86, width: 86 },
   { key: "seedingTime", label: "Seeding time", class: "col-seeding-time", minWidth: 96, width: 96 },
   { key: "trackerHost", label: "Tracker", class: "col-tracker", minWidth: 120, width: 120 },
-  { key: "trackerStatus", label: "Tracker status", class: "col-tracker-status", minWidth: 104, width: 104 },
+  {
+    key: "trackerStatus",
+    label: "Tracker status",
+    class: "col-tracker-status",
+    minWidth: 104,
+    width: 104,
+  },
   { key: "directory", label: "Path", class: "col-path", minWidth: 180, width: 180 },
   { key: "hash", label: "Hash", class: "col-hash", minWidth: 140, width: 140 },
   { key: "message", label: "Message", class: "col-message", minWidth: 180, width: 180 },
@@ -44,7 +50,9 @@ export type ColumnConfig = { key: ColumnKey; visible: boolean; width: number };
 export const DEFAULT_COLUMN_LAYOUT: ColumnLayout = {
   order: [...DEFAULT_COLUMN_KEYS],
   hidden: [],
-  widths: Object.fromEntries(COLUMN_DEFINITIONS.map((column) => [column.key, column.width])) as Partial<Record<ColumnKey, number>>,
+  widths: Object.fromEntries(
+    COLUMN_DEFINITIONS.map((column) => [column.key, column.width]),
+  ) as Partial<Record<ColumnKey, number>>,
 };
 
 export function columnDefinition(key: ColumnKey) {
@@ -55,7 +63,10 @@ export function layoutToConfig(layout: ColumnLayout): ColumnConfig[] {
   return layout.order.map((key) => ({
     key,
     visible: key === "name" || !layout.hidden.includes(key),
-    width: Math.max(columnDefinition(key).minWidth, Math.round(layout.widths[key] ?? columnDefinition(key).width)),
+    width: Math.max(
+      columnDefinition(key).minWidth,
+      Math.round(layout.widths[key] ?? columnDefinition(key).width),
+    ),
   }));
 }
 
@@ -72,7 +83,8 @@ export function configToLayout(config: unknown): ColumnLayout | null {
     order.push(key);
     const item = raw as { visible?: unknown; width?: unknown };
     if (item.visible === false && key !== "name") hidden.push(key);
-    if (typeof item.width === "number" && Number.isFinite(item.width)) widths[key] = Math.max(columnDefinition(key).minWidth, Math.round(item.width));
+    if (typeof item.width === "number" && Number.isFinite(item.width))
+      widths[key] = Math.max(columnDefinition(key).minWidth, Math.round(item.width));
   }
   for (const key of DEFAULT_COLUMN_KEYS) if (!order.includes(key)) order.push(key);
   return { order, hidden, widths };

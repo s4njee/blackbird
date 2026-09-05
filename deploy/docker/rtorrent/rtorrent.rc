@@ -11,6 +11,24 @@ directory.default.set = /downloads
 network.scgi.open_port = 0.0.0.0:5000
 network.xmlrpc.size_limit.set = 16M
 
+# Keep tracker announces disabled while the session completes torrent checks.
+# This is an appliance-wide command rather than a boolean setting, so it only
+# covers the torrents present at load. Blackbird ramps announces back up a
+# batch at a time once it connects (trackers.* in its config); enabling a
+# large session's trackers all at once exhausts the daemon's file
+# descriptors, which rTorrent treats as fatal rather than degrading. Set
+# trackers.enable_on_connect: false in Blackbird's config to leave announces
+# off entirely.
+trackers.disable = 1
+
+# rTorrent's own cap on simultaneously open torrent *data* files, separate
+# from the process fd limit. The 0.15.x default of 256 is far too low for an
+# appliance seeding hundreds of torrents: rTorrent closes and reopens data
+# files to stay under it, which costs throughput and disk churn (and shows up
+# as slow SCGI responses under load). 3072 is comfortable against the
+# container's 65536 descriptor budget.
+network.max_open_files.set = 3072
+
 dht.mode.set = auto
 dht.port.set = 6881
 protocol.pex.set = yes

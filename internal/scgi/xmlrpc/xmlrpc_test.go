@@ -6,12 +6,11 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
 )
 
-func S(s string) Value  { return Value{Type: "string", Str: s} }
-func I(n int64) Value   { return Value{Type: "int", Int: n} }
-func B(b bool) Value    { return Value{Type: "bool", Bool: b} }
+func S(s string) Value { return Value{Type: "string", Str: s} }
+func I(n int64) Value  { return Value{Type: "int", Int: n} }
+func B(b bool) Value   { return Value{Type: "bool", Bool: b} }
 
 func TestEncodeRequestScalars(t *testing.T) {
 	got := string(EncodeRequest("d.start", []Value{S("ABC123"), I(3), B(true)}))
@@ -184,5 +183,60 @@ func TestBase64RoundTrip(t *testing.T) {
 	}
 	if params[1].Type != "base64" || !bytes.Equal([]byte(params[1].Str), payload) {
 		t.Fatalf("base64 round-trip mismatch: %+v", params[1])
+	}
+}
+
+// TestDecodeResponseRejectsDeepNesting covers a hostile or compromised SCGI
+// peer answering with deeply nested <value> elements. The parser walks the
+// token stream itself, so encoding/xml's own recursion guard never engages;
+// without an explicit depth limit this overflows the goroutine stack, which
+// is a runtime throw that recover() cannot catch and so kills the process.
+// The response byte cap is no defense: the crash fits inside it.
+func TestDecodeResponseRejectsDeepNesting(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0"?><methodResponse><params><param>`)
+	for i := 0; i < 50000; i++ {
+		b.WriteString("<value><array><data>")
+	}
+	// Assert on the depth error specifically: a truncated document also
+	// fails at EOF, so a bare "did it error" check would pass even with no
+	// limit in place and prove nothing.
+	_, err := DecodeResponse([]byte(b.String()))
+	if err == nil {
+		t.Fatal("deeply nested response decoded without error")
+	}
+	if !strings.Contains(err.Error(), "nesting deeper than") {
+		t.Fatalf("want a nesting-depth refusal, got %v", err)
+	}
+}
+
+// TestDecodeResponseAllowsRealisticNesting guards the limit against being
+// set so low it rejects the shapes rTorrent actually sends (a multicall
+// returns array > array > value, three levels deep).
+func TestDecodeResponseAllowsRealisticNesting(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0"?><methodResponse><params><param>`)
+	const depth = 20
+	for i := 0; i < depth; i++ {
+		b.WriteString("<value><array><data>")
+	}
+	b.WriteString("<value><string>ok</string></value>")
+	for i := 0; i < depth; i++ {
+		b.WriteString("</data></array></value>")
+	}
+	b.WriteString(`</param></params></methodResponse>`)
+	vs, err := DecodeResponse([]byte(b.String()))
+	if err != nil {
+		t.Fatalf("realistic nesting rejected: %v", err)
+	}
+	v := vs[0]
+	for i := 0; i < depth; i++ {
+		if v.Type != "array" || len(v.Array) != 1 {
+			t.Fatalf("level %d: got %+v", i, v)
+		}
+		v = v.Array[0]
+	}
+	if v.Type != "string" || v.Str != "ok" {
+		t.Fatalf("innermost = %+v", v)
 	}
 }

@@ -1,0 +1,104 @@
+.flight-recorder {
+  padding: var(--sp-3);
+  min-height: 0;
+  overflow: auto;
+  color: var(--text-secondary);
+  font-size: var(--fs-detail);
+  overflow-wrap: anywhere;
+}
+.flight-recorder h2,
+.flight-recorder h3,
+.flight-recorder h4 {
+  color: var(--text-primary);
+  font-size: var(--fs-detail);
+}
+.flight-controls {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: end;
+  flex-wrap: wrap;
+}
+.flight-controls label,
+.flight-scrubber {
+  display: grid;
+  gap: var(--sp-2);
+}
+.flight-controls input {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-primary);
+  background: var(--bg-control);
+  border: 1px solid var(--border-control);
+  padding: var(--sp-2);
+}
+.flight-scrubber {
+  margin: var(--sp-3) 0;
+}
+.flight-scrubber input {
+  width: 100%;
+}
+.flight-timeline {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr);
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.flight-events {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+  overflow: auto;
+  gap: var(--sp-1);
+}
+.flight-events button {
+  display: grid;
+  gap: var(--sp-1);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  padding: var(--sp-2);
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.flight-events button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+.flight-evidence {
+  min-width: 0;
+}
+.flight-evidence table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.flight-evidence th,
+.flight-evidence td {
+  text-align: left;
+  padding: var(--sp-2);
+  border-bottom: 1px solid var(--border-default);
+}
+.flight-recorder pre {
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+  background: var(--bg-panel);
+  padding: var(--sp-3);
+}
+.flight-coverage {
+  margin-top: var(--sp-3);
+}
+.flight-status {
+  color: var(--status-warn);
+}
+.flight-id {
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+}
+.flight-preview {
+  border-top: 1px solid var(--border-default);
+  margin-top: var(--sp-4);
+}

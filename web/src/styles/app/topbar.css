@@ -1,0 +1,230 @@
+/* ---- Top bar (44px) ---- */
+
+.topbar {
+  height: var(--h-topbar);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-7);
+  padding: 0 var(--sp-5);
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.logo-mark {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: block;
+  border-radius: var(--r-chip);
+  object-fit: cover;
+}
+
+.wordmark {
+  font-size: var(--fs-app-name);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.tb-divider {
+  width: 1px;
+  height: 22px;
+  flex: none;
+  background: var(--border-default);
+}
+
+/* Global rates: ▼ accent, ▲ cyan, value/unit muted-fainter per handoff */
+.rates {
+  display: flex;
+  gap: var(--sp-5);
+  font-size: var(--fs-control);
+  color: var(--text-muted);
+  align-items: baseline;
+}
+
+.rate {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.rate-glyph {
+  font-size: 9px;
+}
+
+.rate-glyph.down {
+  color: var(--accent);
+}
+
+.rate-glyph.up {
+  color: var(--rate-up);
+}
+
+.rate-value {
+  font-size: var(--fs-control);
+}
+
+.rate-unit {
+  color: var(--text-faint);
+}
+
+/* Mini sparkline (170×26) */
+.sparkline {
+  width: 170px;
+  height: 26px;
+  flex: none;
+  padding: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-control);
+}
+
+.sparkline svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sparkline polyline {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.spark-down {
+  stroke: var(--accent);
+}
+
+.spark-up {
+  stroke: var(--rate-up);
+}
+
+.tb-spacer {
+  flex: 1;
+}
+
+/* Filter field (240×26) */
+.filter {
+  width: 240px;
+  height: var(--h-button);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-4);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-control);
+}
+
+.filter:focus-within {
+  border-color: var(--border-control);
+}
+
+.filter-glyph {
+  font-size: var(--fs-control);
+  color: var(--text-ghost);
+}
+
+.filter-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-body);
+  font-size: var(--fs-control);
+}
+
+.filter-input::placeholder {
+  color: var(--text-ghost);
+}
+.filter-help {
+  position: relative;
+  flex: none;
+}
+.filter-help summary {
+  width: 15px;
+  color: var(--text-ghost);
+  font-size: var(--fs-meta);
+  text-align: center;
+  cursor: pointer;
+  list-style: none;
+}
+.filter-help summary::-webkit-details-marker {
+  display: none;
+}
+.filter-help-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: -6px;
+  width: 260px;
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-control);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-popover);
+  color: var(--text-secondary);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+}
+.filter-help-popover b {
+  color: var(--text-primary);
+}
+.filter-help-popover code {
+  color: var(--accent-text);
+}
+.filter-help-popover button {
+  width: max-content;
+  margin-top: var(--sp-2);
+}
+
+/* Buttons */
+.btn-add {
+  height: var(--h-button);
+  padding: 0 var(--sp-5);
+  border: none;
+  border-radius: var(--r-control);
+  background: var(--accent);
+  color: var(--bg-canvas);
+  font-size: var(--fs-control);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-add:hover {
+  filter: brightness(1.1);
+}
+
+.btn-add:active {
+  filter: brightness(0.95);
+}
+
+.btn-icon {
+  width: 28px;
+  height: var(--h-button);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-control);
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn-icon:hover {
+  color: var(--text-primary);
+  border-color: var(--border-control);
+}

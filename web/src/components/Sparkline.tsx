@@ -1,5 +1,6 @@
 import { createMemo } from "solid-js";
 import { historySamples } from "../store/session";
+import { SeriesPointsCache } from "../lib/chartPoints";
 
 // 170×26 sparkline; SVG doubles the viewport for crisp 2px strokes at
 // 0.5× device scale. Flat polylines, no axes — per the handoff.
@@ -8,29 +9,13 @@ const W = 340;
 const H = 44;
 const PAD = 4; // vertical padding so the stroke doesn't clip at the edges
 
-function buildPoints(rates: number[]): string {
-  const n = rates.length;
-  if (n === 0) return `0,${H - PAD} ${W},${H - PAD}`;
-  let max = 0;
-  for (const r of rates) if (r > max) max = r;
-  const span = H - 2 * PAD;
-  return rates
-    .map((rate, i) => {
-      const x = n === 1 ? W - 1 : (i / (n - 1)) * W;
-      const y = max > 0 ? H - PAD - (rate / max) * span : H - PAD;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
-
 export function Sparkline() {
-  const points = createMemo(() => {
-    const samples = historySamples();
-    return {
-      down: buildPoints(samples.map((s) => s.downRate)),
-      up: buildPoints(samples.map((s) => s.upRate)),
-    };
-  });
+  // Cached per data key (PERF-7.4): a quiet tick reuses the strings by
+  // identity instead of rebuilding them; append/drop rebuilds exactly once.
+  const cache = new SeriesPointsCache();
+  const points = createMemo(() =>
+    cache.update(historySamples(), { width: W, height: H, pad: PAD }),
+  );
 
   return (
     <div class="sparkline" role="img" aria-label="Download and upload rate over time">

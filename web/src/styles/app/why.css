@@ -1,0 +1,55 @@
+.why-tab {
+  height: 100%;
+  overflow: auto;
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--text-secondary);
+  font-size: var(--fs-detail);
+  overflow-wrap: anywhere;
+}
+.why-header,
+.why-finding-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+.why-header {
+  justify-content: space-between;
+}
+.why-tab h3,
+.why-tab h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-detail);
+}
+.why-tab h3 span {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.why-tab p {
+  margin: var(--sp-2) 0;
+  line-height: 1.5;
+}
+.why-finding {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-default);
+}
+.why-kind {
+  color: var(--accent-text);
+  font-size: var(--fs-meta);
+}
+.why-evidence,
+.why-freshness {
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+}
+.why-warning {
+  color: var(--status-warn);
+}
+.why-coverage {
+  padding-top: var(--sp-3);
+}
+.why-coverage ul {
+  padding-left: var(--sp-4);
+  line-height: 1.5;
+}

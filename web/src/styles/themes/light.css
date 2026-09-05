@@ -1,0 +1,65 @@
+/* Blackbird Light (THM-9.2): light surfaces, dark text. Accent ink is black so accent-text derivations stay readable on light chips. */
+
+html[data-theme="light"] {
+  /* ---- Backgrounds ---- */
+  --pal-bg-canvas: #e2e4e7;
+  --pal-bg-app: #f4f5f6;
+  --pal-bg-row-alt: #eceef0;
+  --pal-bg-panel: #ffffff;
+  --pal-bg-chrome: #ffffff;
+  --pal-bg-elevated: #ffffff;
+  --pal-bg-control: #eef0f2;
+  --pal-bg-control-active: #e2e6ea;
+  --pal-bg-track: #e3e6e9;
+  --pal-bg-track-dim: #edeff1;
+
+  /* ---- Borders ---- */
+  --pal-border-strong: #b9bfc6;
+  --pal-border-default: #d4d8dd;
+  --pal-border-control: #c6ccd2;
+  --pal-border-subtle: #e0e4e8;
+  --pal-border-row: #e3e6ea;
+  --pal-border-row-dim: #e9ecef;
+
+  /* ---- Text ---- */
+  --pal-text-primary: #111418;
+  --pal-text-body: #1a1d21;
+  --pal-text-secondary: #3d434a;
+  --pal-text-muted: #5b6167;
+  --pal-text-dim: #5f656c;
+  --pal-text-faint: #6b7178;
+  --pal-text-fainter: #7c828a;
+  --pal-text-ghost: #8b9199;
+
+  /* ---- State ---- */
+  --pal-state-disabled: #9aa0a7;
+
+  /* ---- Accent ---- */
+  --pal-accent: #1d4ed8;
+  --pal-accent-foreground: #ffffff;
+  --pal-accent-ink: #000000;
+
+  /* ---- Rates ---- */
+  --pal-rate-up: #0891b2;
+  --pal-rate-up-text: #0e7490;
+
+  /* ---- Progress (blue/green, never the accent) ---- */
+  --pal-progress-active: #1f8fff;
+  --pal-progress-complete: #2ea043;
+
+  /* ---- Status ---- */
+  --pal-status-error: #c0392b;
+  --pal-status-warn: #b45309;
+
+  /* ---- Label palette (darkened for light surfaces) ---- */
+  --pal-label-iso: #b45309;
+  --pal-label-archive: #8a6d2b;
+  --pal-label-kernel: #0e7490;
+  --pal-label-apps: #7c3aed;
+  --pal-label-media: #c0392b;
+
+  /* ---- Shadows (softened for light) ---- */
+  --pal-shadow-window: 0 24px 60px rgba(0, 0, 0, 0.15);
+  --pal-shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.18);
+  --pal-shadow-menu: 0 18px 40px rgba(0, 0, 0, 0.16);
+}
